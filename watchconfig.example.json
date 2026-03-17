@@ -22,12 +22,6 @@
       "destination": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\templates\\admin\\datacustomization\\ccf-editor-view.html",
       "enabled": true,
       "description": "CCF Editor View"
-    },
-    {
-      "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\templates\\admin\\datacustomization\\all-items-view.html",
-      "destination": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\templates\\admin\\datacustomization\\all-items-view.html",
-      "enabled": true,
-      "description": "Data Customization View (All Items)"
     }
   ]
 }
