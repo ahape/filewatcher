@@ -315,6 +315,9 @@ namespace MyNamespace
                 LoadConfiguration();
                 SetupWatchers();
                 Console.WriteLine("Configuration reloaded successfully.");
+
+                foreach (var mapping in _config.Mappings.Where(x => x.Enabled))
+                    ProcessFileChange(mapping, null);
             }
             catch (Exception ex)
             {
