@@ -30,6 +30,8 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
         StringComparer.OrdinalIgnoreCase
     );
+    internal readonly ConcurrentDictionary<string, (DateTime LastWrite, long Size)> _fileStates =
+        new(StringComparer.OrdinalIgnoreCase);
     private WatchConfig _config = new();
     private bool _disposed;
 
@@ -113,8 +115,19 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         var grouped = new Dictionary<string, List<UpdateEntry>>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in (_config.Hooks?.OnUpdate ?? []).Where(e => e.Enabled))
         {
-            if (string.IsNullOrWhiteSpace(entry.Source) || !File.Exists(entry.Source))
+            if (string.IsNullOrWhiteSpace(entry.Source))
+            {
+                LogService.Log(
+                    LogLevel.Warning,
+                    $"Entry skipped: source is missing ({entry.Description})."
+                );
                 continue;
+            }
+            if (!File.Exists(entry.Source))
+            {
+                LogService.Log(LogLevel.Warning, $"Source file not found: {entry.Source}");
+                continue;
+            }
 
             var directory = Path.GetDirectoryName(entry.Source)!;
             if (!grouped.TryGetValue(directory, out var list))
@@ -160,6 +173,26 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         if (entry == null)
             return;
 
+        try
+        {
+            var fileInfo = new FileInfo(args.FullPath);
+            if (!fileInfo.Exists)
+                return;
+
+            var currentState = (fileInfo.LastWriteTimeUtc, fileInfo.Length);
+            if (
+                _fileStates.TryGetValue(args.FullPath, out var previousState)
+                && previousState == currentState
+            )
+                return;
+
+            _fileStates[args.FullPath] = currentState;
+        }
+        catch (Exception)
+        {
+            // Ignore if file is locked; we'll retry or just proceed with scheduling
+        }
+
         ScheduleActions(entry);
     }
 
@@ -201,7 +234,9 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             }
             finally
             {
-                _pendingTokens.TryRemove(entry.Source, out _);
+                _pendingTokens.TryRemove(
+                    new KeyValuePair<string, CancellationTokenSource>(entry.Source, cts)
+                );
                 cts.Dispose();
             }
         });

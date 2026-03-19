@@ -77,5 +77,4 @@ public static class LogWebServer
         );
         await HostingAbstractionsHostExtensions.RunAsync(app, token);
     }
-
 }
