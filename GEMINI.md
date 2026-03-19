@@ -14,13 +14,13 @@ This document provides context and guidelines for interacting with the `filewatc
   - File-scoped namespaces
 
 ## Core Guidelines
-- **Minimize Source Lines of Code (SLoC)**: Avoid unnecessary classes, abstractions, or structural bloat. Keep DTOs/records grouped in single lines if possible.
+- **Minimize Source Lines of Code (SLoC)**: Avoid unnecessary classes, abstractions, or structural bloat. Keep DTOs/records concise; expand to multi-line only when adding XML doc comments.
 - **Dependencies**: The project depends on `Microsoft.AspNetCore.App` for the built-in web server. Unless completely unavoidable, rely solely on built-in .NET SDK packages.
 - **Testing**: Maintain high test coverage using xUnit in the `FileWatcher.Tests` project. To run tests, simply execute `dotnet test`.
 
 ## Features
 - The project implements a file system watcher with debounce, retry logic, and backup capabilities.
-- It features a built-in lightweight `Kestrel` web server (`LogWebServer.cs`) that broadcasts logs in real-time via Server-Sent Events (SSE) to a single-file, minified HTML/JS dashboard.
+- It features a built-in lightweight `Kestrel` web server (`LogWebServer.cs`) that broadcasts logs in real-time via Server-Sent Events (SSE) to a single-file HTML/JS dashboard (stored as a readable, multi-line raw string literal in `LogWebServer.cs`).
 
 ## When modifying files
 Always ensure that changes conform to the existing ultra-compact formatting, run the tests to confirm regressions are avoided, and verify no warnings (including nullable reference warnings) are introduced.

@@ -29,7 +29,7 @@ While the app is running:
 - `q` exits cleanly.
 - Any other key prints the current watcher/status summary.
 
-Keep the console window open; Filewatcher writes a short log each time it copies a file or hits an error. You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
+Keep the console window open; Filewatcher writes a short log each time it copies a file or hits an error — each line is prefixed with its severity (`[INFO]`, `[WARNING]`, `[ERROR]`, etc.) so the output is readable without colour support. You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
 
 ## Configuration reference (`watchconfig.json`)
 ```json
@@ -42,12 +42,24 @@ Keep the console window open; Filewatcher writes a short log each time it copies
   },
   "mappings": [
     {
+      "id": "app-script",
       "source": "C:\\path\\to\\file.js",
       "destination": "D:\\deploy\\file.js",
       "enabled": true,
       "description": "What this file is for"
     }
-  ]
+  ],
+  "hooks": {
+    "onStartup": {
+      "command": "npm install",
+      "location": "C:\\my-project"
+    },
+    "onUpdate": {
+      "command": "npm run build",
+      "location": "C:\\my-project",
+      "listenTo": "app-script"
+    }
+  }
 }
 ```
 - `debounceMs`: wait time (in ms) after a change before copying. Increase if your editor saves in bursts.
@@ -55,10 +67,15 @@ Keep the console window open; Filewatcher writes a short log each time it copies
 - `logLevel`: currently informational only; keep as `Info`.
 - `dashboardPort`: The port for the real-time Web Dashboard UI.
 - Each entry in `mappings`:
+  - `id`: optional unique label used to bind a hook to this specific mapping.
   - `source`: full path to the file you actively edit.
   - `destination`: full path that should receive the copy (directories are created if missing).
   - `enabled`: toggle without deleting the entry.
   - `description`: optional label that appears in the console log.
+- `hooks` (optional):
+  - `onStartup`: runs once when Filewatcher starts (or after a config reload).
+  - `onUpdate`: runs after each successful copy.
+  - Each hook takes a `command` (required), an optional `location` (working directory; defaults to the current directory), and an optional `listenTo` (mapping `id` to target; omit to fire on every update).
 
 ## Troubleshooting
 - **"Source file not found" warning**: confirm the path and that the file exists before starting Filewatcher.
