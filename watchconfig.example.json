@@ -1,8 +1,19 @@
 {
+  "$schema": "./watchconfig.schema.json",
   "settings": {
     "debounceMs": 1000,
     "createBackups": false,
     "logLevel": "Info"
+  },
+  "hooks": {
+    "onStartup": {
+      "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
+      "command": "npx tsc -w -p tsconfig.development.json"
+    },
+    "onUpdate": {
+      "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
+      "command": "npm run ts:lint"
+    }
   },
   "mappings": [
     {

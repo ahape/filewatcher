@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "File Sync and Build Configuration",
+  "description": "Configuration schema for mapping files and running lifecycle hooks.",
+  "type": "object",
+  "required": [
+    "settings",
+    "mappings"
+  ],
+  "properties": {
+    "settings": {
+      "type": "object",
+      "description": "Global settings for the application.",
+      "required": [
+        "debounceMs",
+        "createBackups",
+        "logLevel"
+      ],
+      "properties": {
+        "debounceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Delay in milliseconds to wait before triggering an action."
+        },
+        "createBackups": {
+          "type": "boolean",
+          "description": "Determines if backups should be created before overwriting files."
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": [
+            "Trace",
+            "Debug",
+            "Info",
+            "Warn",
+            "Error",
+            "Fatal"
+          ],
+          "description": "The verbosity level of the logs."
+        }
+      },
+      "additionalProperties": false
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Lifecycle scripts to run at specific events.",
+      "properties": {
+        "onStartup": {
+          "$ref": "#/$defs/hookConfiguration",
+          "description": "Hook executed when the application starts."
+        },
+        "onUpdate": {
+          "$ref": "#/$defs/hookConfiguration",
+          "description": "Hook executed when a file update is detected."
+        },
+        "onShutdown": {
+          "$ref": "#/$defs/hookConfiguration",
+          "description": "Hook executed when the application is closing."
+        }
+      },
+      "additionalProperties": false
+    },
+    "mappings": {
+      "type": "array",
+      "description": "List of file or directory mappings to sync/copy.",
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "destination"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "The absolute or relative path to the source file or directory."
+          },
+          "destination": {
+            "type": "string",
+            "description": "The absolute or relative path to the destination file or directory."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this mapping is currently active."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what this mapping does."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hookConfiguration": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "The working directory where the command should be executed."
+        },
+        "command": {
+          "type": "string",
+          "description": "The shell command or script to execute."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

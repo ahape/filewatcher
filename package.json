@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "check": "ajv validate --schema-path ./schema.json ./data.json"
+  },
+  "devDependencies": {
+    "ajv": "^8.18.0"
+  }
+}
