@@ -20,7 +20,22 @@ namespace FileWatcher;
 /// </summary>
 internal sealed class DefaultLogWebServer : ILogWebServer
 {
-    // ── Static, Private ──────────────────────────────────────────────
+    public async Task StartAsync(int port, CancellationToken token)
+    {
+        try
+        {
+            WebApplication app = BuildApp(port);
+            MapEndpoints(app, token);
+            await app.RunAsync(token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogService.Log(
+                LogLevel.Error,
+                $"Failed to start web server on port {port}: {ex.Message}"
+            );
+        }
+    }
 
     private static WebApplication BuildApp(int port)
     {
@@ -96,25 +111,6 @@ internal sealed class DefaultLogWebServer : ILogWebServer
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LogService.Log(LogLevel.Error, $"[Stream] Failed to send log entry: {ex.Message}");
-        }
-    }
-
-    // ── Instance, Public ─────────────────────────────────────────────
-
-    public async Task StartAsync(int port, CancellationToken token)
-    {
-        try
-        {
-            WebApplication app = BuildApp(port);
-            MapEndpoints(app, token);
-            await app.RunAsync(token);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            LogService.Log(
-                LogLevel.Error,
-                $"Failed to start web server on port {port}: {ex.Message}"
-            );
         }
     }
 }

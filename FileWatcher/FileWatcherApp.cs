@@ -21,43 +21,6 @@ internal sealed class FileWatcherApp(
     IConsole? console = null
 ) : IDisposable
 {
-    // ── Static, Internal ─────────────────────────────────────────────
-
-    /// <summary>Logs the startup banner with the dashboard URL and available key commands.</summary>
-    internal static void PrintWelcome(int port)
-    {
-        LogService.Log(LogLevel.Success, $"Monitoring started. Dashboard: http://localhost:{port}");
-        LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
-    }
-
-    // ── Static, Private ──────────────────────────────────────────────
-
-    private const int DefaultDashboardPort = 5002;
-
-    private static readonly TimeSpan s_keyPollInterval = TimeSpan.FromMilliseconds(75);
-    private static readonly JsonSerializerOptions s_serializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
-    /// <summary>
-    /// Returns a key that uniquely identifies this entry's action, so that multiple
-    /// entries watching the same source file get independent debounce timers.
-    /// </summary>
-    private static string EntryKey(UpdateEntry entry) =>
-        $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
-
-    private static string EntryLabel(UpdateEntry entry) =>
-        string.IsNullOrWhiteSpace(entry.Description)
-            ? Path.GetFileName(entry.Source)
-            : entry.Description;
-
-    // ── Instance, Public ─────────────────────────────────────────────
-
     /// <summary>
     /// Orchestrates the entire application lifecycle: loading configuration, setting up
     /// watchers, running startup hooks, starting the web server, and entering the console
@@ -91,8 +54,6 @@ internal sealed class FileWatcherApp(
         _disposed = true;
         GC.SuppressFinalize(this);
     }
-
-    // ── Instance, Internal ───────────────────────────────────────────
 
     internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(
         StringComparer.OrdinalIgnoreCase
@@ -249,8 +210,6 @@ internal sealed class FileWatcherApp(
             $"\nStatus at {DateTime.Now:T}: {_directoryWatchers.Count} watchers, {_pendingTokens.Count} pending."
         );
     }
-
-    // ── Instance, Private ────────────────────────────────────────────
 
     private readonly string _configPath = configPath;
     private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
@@ -475,4 +434,35 @@ internal sealed class FileWatcherApp(
             w.Dispose();
         _directoryWatchers.Clear();
     }
+
+    /// <summary>Logs the startup banner with the dashboard URL and available key commands.</summary>
+    internal static void PrintWelcome(int port)
+    {
+        LogService.Log(LogLevel.Success, $"Monitoring started. Dashboard: http://localhost:{port}");
+        LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
+    }
+
+    private const int DefaultDashboardPort = 5002;
+
+    private static readonly TimeSpan s_keyPollInterval = TimeSpan.FromMilliseconds(75);
+    private static readonly JsonSerializerOptions s_serializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    /// <summary>
+    /// Returns a key that uniquely identifies this entry's action, so that multiple
+    /// entries watching the same source file get independent debounce timers.
+    /// </summary>
+    private static string EntryKey(UpdateEntry entry) =>
+        $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
+
+    private static string EntryLabel(UpdateEntry entry) =>
+        string.IsNullOrWhiteSpace(entry.Description)
+            ? Path.GetFileName(entry.Source)
+            : entry.Description;
 }

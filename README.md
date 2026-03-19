@@ -4,11 +4,13 @@ Filewatcher is a simple, agnostic file system watcher that triggers actions on f
 
 ## Why you might want it
 - Watch any number of individual files across different folders.
+- Multiple entries can target the same source file with independent actions.
 - Debounced execution prevents spamming actions on rapid, repeated saves.
 - Run arbitrary commands (e.g., `npm run build`, `systemctl restart service`) whenever specific files change.
+- Per-entry `logLevel` control — set to `"None"` to silence noisy long-running processes.
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
 - **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
-- **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps.
+- **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps. Zero-byte files (mid-write truncations) are also filtered out.
 - **Non-blocking Startup**: The web server and file monitoring start immediately, even if you have long-running startup hooks (like a compiler in watch mode).
 
 ## Requirements
@@ -22,7 +24,7 @@ Filewatcher is a simple, agnostic file system watcher that triggers actions on f
 
 ## Running the watcher
 ```powershell
-dotnet run
+dotnet run --project FileWatcher
 ```
 While the app is running:
 - `r` reloads `watchconfig.json` without restarting the watcher or dashboard.
@@ -43,7 +45,7 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   "hooks": {
     "onStartup": [
       { "command": "echo 'Starting up!'" },
-      { "location": "./scripts", "command": "npm install" }
+      { "location": "./scripts", "command": "npm install", "logLevel": "None" }
     ],
     "onUpdate": [
       {
@@ -65,20 +67,22 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
 
 - **`settings`**:
   - `debounceMs`: Wait time (in ms) after a change before executing actions. Combines rapid sequential saves.
-  - `logLevel`: Set to `"Debug"` to enable detailed, real-time logging of internal file events, debounce timers, and command hooks. Defaults to `"Info"`.
+  - `logLevel`: Controls debug output visibility. Set to `"Debug"` or `"Trace"` to enable verbose diagnostic logging of internal file events, debounce timers, and command hooks. Defaults to `"Info"`.
   - `dashboardPort`: The TCP port for the real-time Web Dashboard UI.
 
 - **`hooks.onStartup`**: Commands executed once when the application starts or after a config reload.
   - `command`: The shell command to execute.
   - `location` (optional): The working directory for the command.
+  - `logLevel` (optional): Log level for this hook's output. Set to `"None"` to suppress all stdout. Defaults to `"Info"`.
 
-- **`hooks.onUpdate`**: Actions executed after a watched file changes.
+- **`hooks.onUpdate`**: Actions executed after a watched file changes. Multiple entries can target the same source file; each gets independent debounce timers and actions.
   - `source`: Full or relative path to the file you want to watch.
   - `copyTo` (optional): Path to copy the source file to on change (directories are created if missing).
   - `command` (optional): Shell command to run after a change (and after copying, if applicable).
   - `location` (optional): Working directory for the command.
   - `enabled` (optional): Toggle to `false` to skip the entry without deleting it (defaults to `true`).
   - `description` (optional): Label that appears in the console log.
+  - `logLevel` (optional): Log level for this hook's output. Set to `"None"` to suppress all stdout. Defaults to `"Info"`.
 
 ## Troubleshooting
 - **File not found error on startup**: Ensure `watchconfig.json` exists in your working directory.

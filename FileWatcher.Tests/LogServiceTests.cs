@@ -26,9 +26,7 @@ public sealed class LogServiceTests : IDisposable
         LogService.Clear();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // Console prefix (colour-blind accessibility)
-    // ─────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(LogLevel.Info, "[INFO]")]
@@ -70,9 +68,7 @@ public sealed class LogServiceTests : IDisposable
         Assert.Contains("hello from test", _out.ToString());
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // In-memory queue
-    // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Log_SingleEntry_IsReturnedByGetRecentLogs()
@@ -115,9 +111,7 @@ public sealed class LogServiceTests : IDisposable
         Assert.Empty(LogService.GetRecentLogs());
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // OnLog event
-    // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Log_WithSubscriber_RaisesOnLogWithCorrectEntry()
@@ -159,9 +153,7 @@ public sealed class LogServiceTests : IDisposable
         Assert.Equal(1, count2);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     // Timestamp
-    // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Log_Timestamp_IsApproximatelyNow()

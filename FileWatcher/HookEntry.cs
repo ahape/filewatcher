@@ -6,8 +6,6 @@ namespace FileWatcher;
 /// </summary>
 public abstract record HookEntry
 {
-    // ── Instance, Public ─────────────────────────────────────────────
-
     /// <summary>Shell command to execute.</summary>
     public string Command { get; set; } = "";
 

@@ -6,8 +6,6 @@ namespace FileWatcher;
 /// </summary>
 public sealed record UpdateEntry : HookEntry
 {
-    // ── Instance, Public ─────────────────────────────────────────────
-
     /// <summary>Absolute or relative path to the source file to watch.</summary>
     public string Source { get; set; } = "";
 

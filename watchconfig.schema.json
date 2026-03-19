@@ -20,9 +20,9 @@
         },
         "logLevel": {
           "type": "string",
-          "enum": ["Trace", "Debug", "Info", "Warn", "Error", "Fatal", "None"],
+          "enum": ["Trace", "Debug", "Info"],
           "default": "Info",
-          "description": "The verbosity of the console output."
+          "description": "Controls debug output visibility. Set to 'Debug' or 'Trace' to enable verbose diagnostic logging. Defaults to 'Info'."
         },
         "dashboardPort": {
           "type": "integer",

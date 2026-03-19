@@ -12,27 +12,6 @@ namespace FileWatcher;
 /// </summary>
 internal sealed class ShellProcessRunner : IProcessRunner
 {
-    // ── Static, Private ──────────────────────────────────────────────
-
-    private static ProcessStartInfo CreateStartInfo(string cmd, string dir)
-    {
-        (string fn, string args) = OperatingSystem.IsWindows()
-            ? ("cmd.exe", $"/c \"{cmd}\"")
-            : ("sh", $"-c \"{cmd}\"");
-        return new ProcessStartInfo
-        {
-            FileName = fn,
-            Arguments = args,
-            WorkingDirectory = dir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-    }
-
-    // ── Instance, Public ─────────────────────────────────────────────
-
     public async Task<int> RunAsync(
         string cmd,
         string dir,
@@ -57,5 +36,22 @@ internal sealed class ShellProcessRunner : IProcessRunner
         p.BeginErrorReadLine();
         await p.WaitForExitAsync(token);
         return p.ExitCode;
+    }
+
+    private static ProcessStartInfo CreateStartInfo(string cmd, string dir)
+    {
+        (string fn, string args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c \"{cmd}\"")
+            : ("sh", $"-c \"{cmd}\"");
+        return new ProcessStartInfo
+        {
+            FileName = fn,
+            Arguments = args,
+            WorkingDirectory = dir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
     }
 }

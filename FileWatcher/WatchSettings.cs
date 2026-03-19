@@ -6,7 +6,7 @@ public sealed record WatchSettings
     /// <summary>Milliseconds to wait after a file change before acting, to coalesce rapid saves.</summary>
     public int DebounceMs { get; set; } = 1000;
 
-    /// <summary>Reserved for future log-verbosity filtering; not yet enforced.</summary>
+    /// <summary>Controls debug output visibility. Set to <c>"Debug"</c> or <c>"Trace"</c> to enable verbose diagnostic logging.</summary>
     public string LogLevel { get; set; } = "Info";
 
     /// <summary>TCP port for the web dashboard. Defaults to 5002 if zero or omitted.</summary>

@@ -10,8 +10,6 @@ namespace FileWatcher;
 /// </summary>
 public static class LogService
 {
-    // ── Static, Public ───────────────────────────────────────────────
-
     /// <summary>Fired on the calling thread each time a new entry is logged.</summary>
     public static event Action<LogEntry>? OnLog;
 
@@ -33,15 +31,11 @@ public static class LogService
     /// <summary>Returns all retained log entries, oldest first.</summary>
     public static IEnumerable<LogEntry> GetRecentLogs() => s_logs;
 
-    // ── Static, Internal ─────────────────────────────────────────────
-
     /// <summary>Maximum number of log entries retained in the in-memory queue for the dashboard.</summary>
     internal const int MaxLogEntries = 500;
 
     /// <summary>Removes all retained entries. Intended for test isolation only.</summary>
     internal static void Clear() => s_logs.Clear();
-
-    // ── Static, Private ──────────────────────────────────────────────
 
     private static readonly ConcurrentQueue<LogEntry> s_logs = new();
 

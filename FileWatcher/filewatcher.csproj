@@ -12,5 +12,4 @@
   <ItemGroup>
     <Content Include="dashboard.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-
 </Project>
