@@ -15,8 +15,8 @@ namespace FileWatcher;
 
 /// <summary>
 /// ASP.NET Core / Kestrel implementation of <see cref="ILogWebServer"/>.
-/// Serves the bundled <c>dashboard.html</c> at <c>/</c>, the recent log history at <c>/logs</c>
-/// (JSON array), and a Server-Sent Events stream of live entries at <c>/stream</c>.
+/// Serves the web dashboard from <c>wwwroot/</c> via static file middleware, the recent
+/// log history at <c>/logs</c> (JSON array), and a Server-Sent Events stream at <c>/stream</c>.
 /// </summary>
 internal sealed class DefaultLogWebServer : ILogWebServer
 {
@@ -48,31 +48,18 @@ internal sealed class DefaultLogWebServer : ILogWebServer
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
         b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
+        b.Environment.WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         WebApplication app = b.Build();
         app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
         return app;
     }
 
     private static void MapEndpoints(WebApplication app, CancellationToken token)
     {
-        app.MapGet("/", c => ServeDashboardAsync(c, token));
         app.MapGet("/logs", LogService.GetRecentLogs);
         app.MapGet("/stream", c => StreamLogsAsync(c, token));
-    }
-
-    private static async Task ServeDashboardAsync(HttpContext c, CancellationToken token)
-    {
-        c.Response.ContentType = "text/html";
-        string htmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard.html");
-        if (File.Exists(htmlPath))
-        {
-            await c.Response.SendFileAsync(htmlPath, token);
-        }
-        else
-        {
-            c.Response.StatusCode = 404;
-            await c.Response.WriteAsync("dashboard.html not found in output directory.", token);
-        }
     }
 
     private static async Task StreamLogsAsync(HttpContext c, CancellationToken token)

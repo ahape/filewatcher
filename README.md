@@ -1,20 +1,22 @@
 # Filewatcher
 
-Filewatcher is a simple, agnostic file system watcher that triggers actions on file events (`Created` and `Changed`). It is designed around a straightforward "onEvent -> someAction" model, allowing you to copy changed files to another location (proxy/persistence) or run arbitrary subprocess commands that pipe their output to the main thread.
+Filewatcher is a simple, agnostic file system watcher that triggers actions on file events (`Created`, `Changed`, and `Renamed`). It is designed around a straightforward "onEvent -> someAction" model, allowing you to copy changed files to another location (proxy/persistence) or run arbitrary subprocess commands that pipe their output to the main thread.
 
 ## Why you might want it
 - Watch any number of individual files across different folders.
 - Multiple entries can target the same source file with independent actions.
 - Debounced execution prevents spamming actions on rapid, repeated saves.
 - Run arbitrary commands (e.g., `npm run build`, `systemctl restart service`) whenever specific files change.
+- Per-entry `name` for log prefixes — know exactly which subprocess produced each line of output.
 - Per-entry `logLevel` control — set to `"None"` to silence noisy long-running processes.
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
-- **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
-- **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps. Zero-byte files (mid-write truncations) are also filtered out.
+- **Web Dashboard**: View real-time logs in your browser via a built-in HTMX + Tailwind CSS dashboard served by Kestrel.
+- **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps. Zero-byte files (mid-write truncations) are also filtered out. Detects saves from editors that use "atomic save" (write-temp-then-rename) such as Visual Studio, VS Code, and JetBrains IDEs.
 - **Non-blocking Startup**: The web server and file monitoring start immediately, even if you have long-running startup hooks (like a compiler in watch mode).
 
 ## Requirements
 - [.NET SDK 10.0+](https://dotnet.microsoft.com/download)
+- [Node.js 18+](https://nodejs.org/) (for building the web dashboard)
 - Windows, macOS, or Linux. (The app detects your OS to run commands via `cmd.exe` or `sh`).
 
 ## First-time setup
@@ -26,6 +28,8 @@ Filewatcher is a simple, agnostic file system watcher that triggers actions on f
 ```powershell
 dotnet run --project FileWatcher
 ```
+The first build will automatically run `npm ci` and `npm run build` in the `WebFrontEnd/` directory to compile the dashboard assets. Subsequent builds only rebuild when sources change.
+
 While the app is running:
 - `r` reloads `watchconfig.json` without restarting the watcher or dashboard.
 - `q` exits cleanly.
@@ -45,13 +49,14 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   "hooks": {
     "onStartup": [
       { "command": "echo 'Starting up!'" },
-      { "location": "./scripts", "command": "npm install", "logLevel": "None" }
+      { "name": "tsc-watcher", "location": "./scripts", "command": "npx tsc -w", "logLevel": "None" }
     ],
     "onUpdate": [
       {
+        "name": "lint",
         "source": "./src/app/bundle.js",
         "copyTo": "./dist/app.js",
-        "command": "echo 'Bundle updated.'",
+        "command": "npm run lint",
         "location": "./src/app",
         "description": "Main application javascript bundle"
       },
@@ -71,11 +76,13 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   - `dashboardPort`: The TCP port for the real-time Web Dashboard UI.
 
 - **`hooks.onStartup`**: Commands executed once when the application starts or after a config reload.
+  - `name` (optional): Label shown in log prefixes to identify this hook's output (e.g., `[tsc-watcher]`). Defaults to `[Hook]`.
   - `command`: The shell command to execute.
   - `location` (optional): The working directory for the command.
   - `logLevel` (optional): Log level for this hook's output. Set to `"None"` to suppress all stdout. Defaults to `"Info"`.
 
 - **`hooks.onUpdate`**: Actions executed after a watched file changes. Multiple entries can target the same source file; each gets independent debounce timers and actions.
+  - `name` (optional): Label shown in log prefixes to identify this hook's output (e.g., `[lint]`). Defaults to `[Hook]`.
   - `source`: Full or relative path to the file you want to watch.
   - `copyTo` (optional): Path to copy the source file to on change (directories are created if missing).
   - `command` (optional): Shell command to run after a change (and after copying, if applicable).
@@ -84,8 +91,20 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   - `description` (optional): Label that appears in the console log.
   - `logLevel` (optional): Log level for this hook's output. Set to `"None"` to suppress all stdout. Defaults to `"Info"`.
 
+## Web Dashboard
+
+The dashboard is an HTMX + Tailwind CSS app in the `WebFrontEnd/` directory. It is automatically built when you build the .NET project. To rebuild just the frontend during development:
+
+```powershell
+cd WebFrontEnd
+npm run build
+```
+
+The build compiles TypeScript via esbuild, processes Tailwind CSS, and outputs everything to `WebFrontEnd/wwwroot/`, which is then copied to the .NET output directory and served by Kestrel's static file middleware.
+
 ## Troubleshooting
 - **File not found error on startup**: Ensure `watchconfig.json` exists in your working directory.
 - **"Source file not found" warning**: Confirm the `source` path exists; the app skips invalid entries gracefully.
-- **Nothing happens on change**: Verify the entry is `enabled`, the file path is correct, and reload the config (`r`).
+- **Nothing happens on change**: Verify the entry is `enabled`, the file path is correct, and reload the config (`r`). If you are using an editor with "atomic save" (Visual Studio, VS Code, JetBrains), the `Renamed` event handler should catch it — check debug logs for details.
 - **Permissions issues**: Make sure you have write access to the destination folder or permission to execute the configured commands.
+- **Dashboard build fails**: Ensure Node.js 18+ is installed and `npm` is on your PATH.

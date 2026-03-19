@@ -3,13 +3,25 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <WebFrontEndDir>$(MSBuildProjectDirectory)\..\WebFrontEnd</WebFrontEndDir>
+    <WwwRootDir>$(WebFrontEndDir)\wwwroot</WwwRootDir>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="dashboard.html" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <Target Name="BuildWebFrontEnd" BeforeTargets="BeforeBuild">
+    <Exec Command="npm ci --prefer-offline" WorkingDirectory="$(WebFrontEndDir)" />
+    <Exec Command="npm run build" WorkingDirectory="$(WebFrontEndDir)" />
+  </Target>
+
+  <Target Name="CopyWwwRoot" AfterTargets="Build">
+    <ItemGroup>
+      <WwwRootFiles Include="$(WwwRootDir)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WwwRootFiles)"
+          DestinationFiles="@(WwwRootFiles->'$(OutputPath)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

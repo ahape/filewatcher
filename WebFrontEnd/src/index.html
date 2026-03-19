@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileWatcher Dashboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/htmx.min.js" defer></script>
+</head>
+<body class="bg-gray-900 text-gray-200 m-0 p-5 font-sans">
+  <div>
+    <header class="flex justify-between items-center border-b border-gray-700 pb-2.5 mb-5" role="banner">
+      <h1 class="m-0 text-2xl text-cyan-400">FileWatcher Dashboard</h1>
+      <div id="status"
+           class="text-xs bg-gray-800 px-2 py-1 rounded text-red-500"
+           role="status"
+           aria-live="polite"
+           aria-atomic="true"
+           aria-label="Connection status">
+        Connecting&hellip;
+      </div>
+    </header>
+
+    <main>
+      <section aria-labelledby="logs-heading">
+        <h2 id="logs-heading" class="sr-only">Application Logs</h2>
+        <div id="logs"
+             class="font-mono text-sm leading-relaxed max-h-[80vh] overflow-y-auto"
+             role="log"
+             aria-label="Application log entries"
+             tabindex="0"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

@@ -6,3 +6,4 @@ package-lock.json
 coverage/
 TestResults/
 .tools/
+WebFrontEnd/wwwroot/
