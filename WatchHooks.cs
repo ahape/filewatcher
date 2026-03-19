@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace FileWatcher;
 
 /// <summary>Container for lifecycle hook arrays.</summary>
