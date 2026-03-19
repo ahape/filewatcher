@@ -12,6 +12,27 @@ namespace FileWatcher;
 /// </summary>
 internal sealed class ShellProcessRunner : IProcessRunner
 {
+    // ── Static, Private ──────────────────────────────────────────────
+
+    private static ProcessStartInfo CreateStartInfo(string cmd, string dir)
+    {
+        (string fn, string args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c \"{cmd}\"")
+            : ("sh", $"-c \"{cmd}\"");
+        return new ProcessStartInfo
+        {
+            FileName = fn,
+            Arguments = args,
+            WorkingDirectory = dir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+    }
+
+    // ── Instance, Public ─────────────────────────────────────────────
+
     public async Task<int> RunAsync(
         string cmd,
         string dir,
@@ -20,22 +41,7 @@ internal sealed class ShellProcessRunner : IProcessRunner
         CancellationToken token
     )
     {
-        (string? fn, string? args) = OperatingSystem.IsWindows()
-            ? ("cmd.exe", $"/c \"{cmd}\"")
-            : ("sh", $"-c \"{cmd}\"");
-        using var p = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = fn,
-                Arguments = args,
-                WorkingDirectory = dir,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            },
-        };
+        using var p = new Process { StartInfo = CreateStartInfo(cmd, dir) };
         p.OutputDataReceived += (_, e) =>
         {
             if (e.Data != null)

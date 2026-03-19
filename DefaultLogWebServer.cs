@@ -20,88 +20,93 @@ namespace FileWatcher;
 /// </summary>
 internal sealed class DefaultLogWebServer : ILogWebServer
 {
+    // ── Static, Private ──────────────────────────────────────────────
+
+    private static WebApplication BuildApp(int port)
+    {
+        WebApplicationBuilder b = WebApplication.CreateBuilder();
+        b.Logging.ClearProviders();
+        b.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Error);
+        b.Services.AddCors();
+        b.Services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        });
+        b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
+        WebApplication app = b.Build();
+        app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        return app;
+    }
+
+    private static void MapEndpoints(WebApplication app, CancellationToken token)
+    {
+        app.MapGet("/", c => ServeDashboardAsync(c, token));
+        app.MapGet("/logs", LogService.GetRecentLogs);
+        app.MapGet("/stream", c => StreamLogsAsync(c, token));
+    }
+
+    private static async Task ServeDashboardAsync(HttpContext c, CancellationToken token)
+    {
+        c.Response.ContentType = "text/html";
+        string htmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard.html");
+        if (File.Exists(htmlPath))
+        {
+            await c.Response.SendFileAsync(htmlPath, token);
+        }
+        else
+        {
+            c.Response.StatusCode = 404;
+            await c.Response.WriteAsync("dashboard.html not found in output directory.", token);
+        }
+    }
+
+    private static async Task StreamLogsAsync(HttpContext c, CancellationToken token)
+    {
+        c.Response.Headers.Append("Content-Type", "text/event-stream");
+        c.Response.Headers.Append("Cache-Control", "no-cache");
+        var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        opts.Converters.Add(new JsonStringEnumConverter());
+
+        void syncOnLog(LogEntry e) => _ = SendLogEntryAsync(c, e, opts, token);
+        LogService.OnLog += syncOnLog;
+        try
+        {
+            while (!c.RequestAborted.IsCancellationRequested && !token.IsCancellationRequested)
+                await Task.Delay(1000, c.RequestAborted);
+        }
+        finally
+        {
+            LogService.OnLog -= syncOnLog;
+        }
+    }
+
+    private static async Task SendLogEntryAsync(
+        HttpContext c,
+        LogEntry e,
+        JsonSerializerOptions opts,
+        CancellationToken token
+    )
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(e, opts);
+            await c.Response.WriteAsync($"data: {json}\n\n", token);
+            await c.Response.Body.FlushAsync(token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogService.Log(LogLevel.Error, $"[Stream] Failed to send log entry: {ex.Message}");
+        }
+    }
+
+    // ── Instance, Public ─────────────────────────────────────────────
+
     public async Task StartAsync(int port, CancellationToken token)
     {
         try
         {
-            WebApplicationBuilder b = WebApplication.CreateBuilder();
-            b.Logging.ClearProviders();
-            b.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Error);
-            // b.WebHost.SuppressStatusMessages(true);
-            b.Services.AddCors();
-            b.Services.ConfigureHttpJsonOptions(options =>
-            {
-                options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
-            });
-            b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
-            WebApplication app = b.Build();
-            app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-            app.MapGet(
-                "/",
-                async c =>
-                {
-                    c.Response.ContentType = "text/html";
-                    string htmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard.html");
-                    if (File.Exists(htmlPath))
-                    {
-                        await c.Response.SendFileAsync(htmlPath, token);
-                    }
-                    else
-                    {
-                        c.Response.StatusCode = 404;
-                        await c.Response.WriteAsync(
-                            "dashboard.html not found in output directory.",
-                            token
-                        );
-                    }
-                }
-            );
-            app.MapGet("/logs", LogService.GetRecentLogs);
-            app.MapGet(
-                "/stream",
-                async c =>
-                {
-                    c.Response.Headers.Append("Content-Type", "text/event-stream");
-                    c.Response.Headers.Append("Cache-Control", "no-cache");
-                    var opts = new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    };
-                    opts.Converters.Add(new JsonStringEnumConverter());
-                    LogService.OnLog += syncOnLog;
-                    try
-                    {
-                        while (
-                            !c.RequestAborted.IsCancellationRequested
-                            && !token.IsCancellationRequested
-                        )
-                            await Task.Delay(1000, c.RequestAborted);
-                    }
-                    finally
-                    {
-                        LogService.OnLog -= syncOnLog;
-                    }
-                    void syncOnLog(LogEntry e) => _ = onLog(e);
-                    async Task onLog(LogEntry e)
-                    {
-                        try
-                        {
-                            string json = JsonSerializer.Serialize(e, opts);
-                            await c.Response.WriteAsync($"data: {json}\n\n", token);
-                            await c.Response.Body.FlushAsync(token);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            // Serialization or write failure must not crash the stream handler;
-                            // log the problem and continue so other clients are unaffected.
-                            LogService.Log(
-                                LogLevel.Error,
-                                $"[Stream] Failed to send log entry: {ex.Message}"
-                            );
-                        }
-                    }
-                }
-            );
+            WebApplication app = BuildApp(port);
+            MapEndpoints(app, token);
             await app.RunAsync(token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

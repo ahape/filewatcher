@@ -8,7 +8,7 @@ namespace FileWatcher;
 /// </summary>
 internal sealed class PhysicalFileSystemWatcher : IFileSystemWatcher
 {
-    private readonly FileSystemWatcher _watcher;
+    // ── Instance, Public ─────────────────────────────────────────────
 
     public PhysicalFileSystemWatcher(string directory, NotifyFilters filters)
     {
@@ -40,4 +40,8 @@ internal sealed class PhysicalFileSystemWatcher : IFileSystemWatcher
     }
 
     public void Dispose() => _watcher.Dispose();
+
+    // ── Instance, Private ────────────────────────────────────────────
+
+    private readonly FileSystemWatcher _watcher;
 }

@@ -3,11 +3,7 @@ namespace FileWatcher;
 /// <summary>Root configuration object deserialized from <c>watchconfig.json</c>.</summary>
 public sealed record WatchConfig
 {
-    /// <summary>Global settings such as debounce delay and dashboard port.</summary>
-    public WatchSettings Settings { get; set; } = new();
-
-    /// <summary>Lifecycle hooks: arrays of startup commands and per-file update entries.</summary>
-    public WatchHooks? Hooks { get; set; }
+    // ── Static, Public ───────────────────────────────────────────────
 
     /// <summary>Returns a minimal sample configuration suitable for first-run seeding.</summary>
     public static WatchConfig CreateSample() =>
@@ -29,4 +25,12 @@ public sealed record WatchConfig
                 ],
             },
         };
+
+    // ── Instance, Public ─────────────────────────────────────────────
+
+    /// <summary>Global settings such as debounce delay and dashboard port.</summary>
+    public WatchSettings Settings { get; set; } = new();
+
+    /// <summary>Lifecycle hooks: arrays of startup commands and per-file update entries.</summary>
+    public WatchHooks? Hooks { get; set; }
 }

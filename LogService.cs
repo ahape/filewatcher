@@ -10,10 +10,7 @@ namespace FileWatcher;
 /// </summary>
 public static class LogService
 {
-    /// <summary>Maximum number of log entries retained in the in-memory queue for the dashboard.</summary>
-    internal const int MaxLogEntries = 500;
-
-    private static readonly ConcurrentQueue<LogEntry> _logs = new();
+    // ── Static, Public ───────────────────────────────────────────────
 
     /// <summary>Fired on the calling thread each time a new entry is logged.</summary>
     public static event Action<LogEntry>? OnLog;
@@ -25,10 +22,31 @@ public static class LogService
     public static void Log(LogLevel level, string message)
     {
         var entry = new LogEntry(DateTime.Now, level, message);
-        _logs.Enqueue(entry);
-        while (_logs.Count > MaxLogEntries)
-            _logs.TryDequeue(out _);
+        s_logs.Enqueue(entry);
+        while (s_logs.Count > MaxLogEntries)
+            s_logs.TryDequeue(out _);
 
+        WriteToConsole(level, message);
+        OnLog?.Invoke(entry);
+    }
+
+    /// <summary>Returns all retained log entries, oldest first.</summary>
+    public static IEnumerable<LogEntry> GetRecentLogs() => s_logs;
+
+    // ── Static, Internal ─────────────────────────────────────────────
+
+    /// <summary>Maximum number of log entries retained in the in-memory queue for the dashboard.</summary>
+    internal const int MaxLogEntries = 500;
+
+    /// <summary>Removes all retained entries. Intended for test isolation only.</summary>
+    internal static void Clear() => s_logs.Clear();
+
+    // ── Static, Private ──────────────────────────────────────────────
+
+    private static readonly ConcurrentQueue<LogEntry> s_logs = new();
+
+    private static void WriteToConsole(LogLevel level, string message)
+    {
         ConsoleColor oldColor = Console.ForegroundColor;
         Console.ForegroundColor = level switch
         {
@@ -40,21 +58,11 @@ public static class LogService
             _ => ConsoleColor.Gray,
         };
 
-        // Prefix every non-empty line with a text level indicator so the output is
-        // meaningful to users who cannot distinguish colours (colour-blind accessibility).
         if (string.IsNullOrEmpty(message))
             Console.WriteLine();
         else
             Console.WriteLine($"[{level.ToString().ToUpperInvariant()}] {message}");
 
         Console.ForegroundColor = oldColor;
-
-        OnLog?.Invoke(entry);
     }
-
-    /// <summary>Returns all retained log entries, oldest first.</summary>
-    public static IEnumerable<LogEntry> GetRecentLogs() => _logs;
-
-    /// <summary>Removes all retained entries. Intended for test isolation only.</summary>
-    internal static void Clear() => _logs.Clear();
 }
