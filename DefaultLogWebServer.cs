@@ -1,5 +1,9 @@
+using System;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -18,7 +22,7 @@ internal sealed class DefaultLogWebServer : ILogWebServer
 {
     public async Task StartAsync(int port, CancellationToken token)
     {
-        var b = WebApplication.CreateBuilder();
+        WebApplicationBuilder b = WebApplication.CreateBuilder();
         b.Logging.ClearProviders();
         b.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Error);
         b.WebHost.SuppressStatusMessages(true);
@@ -28,14 +32,14 @@ internal sealed class DefaultLogWebServer : ILogWebServer
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
         b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
-        var app = b.Build();
+        WebApplication app = b.Build();
         app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
         app.MapGet(
             "/",
             async c =>
             {
                 c.Response.ContentType = "text/html";
-                var htmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard.html");
+                string htmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard.html");
                 await c.Response.SendFileAsync(htmlPath, token);
             }
         );
@@ -68,7 +72,7 @@ internal sealed class DefaultLogWebServer : ILogWebServer
                 {
                     try
                     {
-                        var json = JsonSerializer.Serialize(e, opts);
+                        string json = JsonSerializer.Serialize(e, opts);
                         await c.Response.WriteAsync($"data: {json}\n\n", token);
                         await c.Response.Body.FlushAsync(token);
                     }

@@ -65,7 +65,7 @@ internal sealed class FileWatcherApp(
         SetupWatchers();
         await RunStartupHooksAsync(token);
 
-        var port =
+        int port =
             _config.Settings.DashboardPort > 0
                 ? _config.Settings.DashboardPort
                 : DefaultDashboardPort;
@@ -104,7 +104,7 @@ internal sealed class FileWatcherApp(
         {
             if (_console.KeyAvailable)
             {
-                var key = _console.ReadKey(true);
+                ConsoleKeyInfo key = _console.ReadKey(true);
                 switch (char.ToLowerInvariant(key.KeyChar))
                 {
                     case 'r':
@@ -152,7 +152,7 @@ internal sealed class FileWatcherApp(
         if (!_fs.FileExists(_configPath))
             throw new FileNotFoundException($"Configuration file not found: {_configPath}");
 
-        await using var stream = _fs.OpenRead(_configPath);
+        await using Stream stream = _fs.OpenRead(_configPath);
         _config =
             await JsonSerializer.DeserializeAsync<WatchConfig>(stream, SerializerOptions, token)
             ?? throw new InvalidOperationException("Configuration file is empty or malformed.");
@@ -167,7 +167,7 @@ internal sealed class FileWatcherApp(
     {
         DisposeWatchers();
         var grouped = new Dictionary<string, List<UpdateEntry>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in (_config.Hooks?.OnUpdate ?? []).Where(e => e.Enabled))
+        foreach (UpdateEntry? entry in (_config.Hooks?.OnUpdate ?? []).Where(e => e.Enabled))
         {
             if (string.IsNullOrWhiteSpace(entry.Source))
             {
@@ -183,8 +183,8 @@ internal sealed class FileWatcherApp(
                 continue;
             }
 
-            var directory = Path.GetDirectoryName(entry.Source)!;
-            if (!grouped.TryGetValue(directory, out var list))
+            string directory = Path.GetDirectoryName(entry.Source)!;
+            if (!grouped.TryGetValue(directory, out List<UpdateEntry>? list))
             {
                 list = [];
                 grouped[directory] = list;
@@ -208,7 +208,7 @@ internal sealed class FileWatcherApp(
     private IFileSystemWatcher CreateWatcher(string directory)
     {
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
-        var watcher = _fs.CreateWatcher(
+        IFileSystemWatcher watcher = _fs.CreateWatcher(
             directory,
             NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
         );
@@ -232,11 +232,11 @@ internal sealed class FileWatcherApp(
     {
         LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
 
-        var directory = Path.GetDirectoryName(args.FullPath);
-        if (directory == null || !_directoryEntries.TryGetValue(directory, out var entries))
+        string? directory = Path.GetDirectoryName(args.FullPath);
+        if (directory == null || !_directoryEntries.TryGetValue(directory, out IReadOnlyList<UpdateEntry>? entries))
             return;
 
-        var entry = entries.FirstOrDefault(e =>
+        UpdateEntry? entry = entries.FirstOrDefault(e =>
             string.Equals(e.Source, args.FullPath, StringComparison.OrdinalIgnoreCase)
         );
         if (entry == null)
@@ -247,9 +247,9 @@ internal sealed class FileWatcherApp(
 
         try
         {
-            var currentState = _fs.GetFileInfo(args.FullPath);
+            (DateTime LastWriteTimeUtc, long Length) currentState = _fs.GetFileInfo(args.FullPath);
             if (
-                _fileStates.TryGetValue(args.FullPath, out var previousState)
+                _fileStates.TryGetValue(args.FullPath, out (DateTime LastWrite, long Size) previousState)
                 && previousState == currentState
             )
             {
@@ -278,7 +278,7 @@ internal sealed class FileWatcherApp(
     internal void ScheduleActions(UpdateEntry entry)
     {
         LogDebug($"Scheduling actions for {entry.Source}");
-        if (_pendingTokens.TryRemove(entry.Source, out var existing))
+        if (_pendingTokens.TryRemove(entry.Source, out CancellationTokenSource? existing))
         {
             LogDebug($"Cancelling previous pending actions for {entry.Source}");
             existing.Cancel();
@@ -291,7 +291,7 @@ internal sealed class FileWatcherApp(
         {
             try
             {
-                var delay = Math.Max(0, _config.Settings.DebounceMs);
+                int delay = Math.Max(0, _config.Settings.DebounceMs);
                 LogDebug($"Delaying {delay}ms for {entry.Source}");
                 await Task.Delay(delay, cts.Token);
 
@@ -299,7 +299,7 @@ internal sealed class FileWatcherApp(
                 if (entry.CopyTo != null)
                 {
                     LogDebug($"Copying {entry.Source} to {entry.CopyTo}");
-                    var destDir = Path.GetDirectoryName(entry.CopyTo);
+                    string? destDir = Path.GetDirectoryName(entry.CopyTo);
                     if (!string.IsNullOrEmpty(destDir))
                         _fs.CreateDirectory(destDir);
                     _fs.CopyFile(entry.Source, entry.CopyTo, overwrite: true);
@@ -336,7 +336,7 @@ internal sealed class FileWatcherApp(
     /// <summary>Runs every <see cref="StartupEntry"/> command in order, awaiting each in turn.</summary>
     internal async Task RunStartupHooksAsync(CancellationToken token)
     {
-        foreach (var entry in _config.Hooks?.OnStartup ?? [])
+        foreach (StartupEntry entry in _config.Hooks?.OnStartup ?? [])
             await RunHookAsync(entry.Command, entry.Location, token);
     }
 
@@ -351,10 +351,10 @@ internal sealed class FileWatcherApp(
             return;
         try
         {
-            var workingDirectory = string.IsNullOrWhiteSpace(location)
+            string workingDirectory = string.IsNullOrWhiteSpace(location)
                 ? Environment.CurrentDirectory
                 : location;
-            var exitCode = await _processRunner.RunAsync(
+            int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
                 line => LogService.Log(LogLevel.Info, $"[Hook] {line}"),
@@ -390,7 +390,7 @@ internal sealed class FileWatcherApp(
     /// <summary>Disposes all active <see cref="IFileSystemWatcher"/> instances and clears the registry.</summary>
     private void DisposeWatchers()
     {
-        foreach (var w in _directoryWatchers.Values)
+        foreach (IFileSystemWatcher w in _directoryWatchers.Values)
             w.Dispose();
         _directoryWatchers.Clear();
     }
@@ -399,7 +399,7 @@ internal sealed class FileWatcherApp(
     {
         if (_disposed)
             return;
-        foreach (var cts in _pendingTokens.Values)
+        foreach (CancellationTokenSource cts in _pendingTokens.Values)
         {
             cts.Cancel();
             cts.Dispose();

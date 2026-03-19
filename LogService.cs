@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 
 namespace FileWatcher;
@@ -27,7 +29,7 @@ public static class LogService
         while (_logs.Count > MaxLogEntries)
             _logs.TryDequeue(out _);
 
-        var oldColor = Console.ForegroundColor;
+        ConsoleColor oldColor = Console.ForegroundColor;
         Console.ForegroundColor = level switch
         {
             LogLevel.Debug => ConsoleColor.DarkGray,

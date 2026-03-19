@@ -1,4 +1,7 @@
+using System;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FileWatcher;
 
@@ -17,7 +20,7 @@ internal sealed class ShellProcessRunner : IProcessRunner
         CancellationToken token
     )
     {
-        var (fn, args) = OperatingSystem.IsWindows()
+        (string? fn, string? args) = OperatingSystem.IsWindows()
             ? ("cmd.exe", $"/c \"{cmd}\"")
             : ("sh", $"-c \"{cmd}\"");
         using var p = new Process
