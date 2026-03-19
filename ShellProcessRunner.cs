@@ -2,6 +2,11 @@ using System.Diagnostics;
 
 namespace FileWatcher;
 
+/// <summary>
+/// Production implementation of <see cref="IProcessRunner"/> that spawns a shell process
+/// (<c>cmd.exe /c</c> on Windows, <c>sh -c</c> elsewhere) and streams its stdout and stderr
+/// line-by-line via callbacks.
+/// </summary>
 internal sealed class ShellProcessRunner : IProcessRunner
 {
     public async Task<int> RunAsync(

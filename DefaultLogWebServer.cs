@@ -9,6 +9,11 @@ using Microsoft.Extensions.Logging;
 
 namespace FileWatcher;
 
+/// <summary>
+/// ASP.NET Core / Kestrel implementation of <see cref="ILogWebServer"/>.
+/// Serves the bundled <c>dashboard.html</c> at <c>/</c>, the recent log history at <c>/logs</c>
+/// (JSON array), and a Server-Sent Events stream of live entries at <c>/stream</c>.
+/// </summary>
 internal sealed class DefaultLogWebServer : ILogWebServer
 {
     public async Task StartAsync(int port, CancellationToken token)

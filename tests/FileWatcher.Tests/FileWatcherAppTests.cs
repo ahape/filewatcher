@@ -167,7 +167,11 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(default);
         app.ScheduleActions(new() { Source = src, CopyTo = dst });
 
-        await Task.Delay(50); // wait for Task.Run inside ScheduleActions to finish
+        // The pending token is removed in the finally block of the Task.Run inside ScheduleActions.
+        // Polling for its removal is more reliable than an arbitrary fixed delay.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (app._pendingTokens.Any() && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
 
         Assert.True(_fs.FileExists(dst));
         Assert.Equal("content", _fs.Files[dst]);
@@ -274,11 +278,11 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public void HandleFileEvent_NullDirectory_ReturnsEarly()
+    public void HandleFileEvent_UnwatchedDirectory_ReturnsEarly()
     {
+        // No watchers set up → no entry for the file's directory → should silently return.
         var app = CreateApp(WriteCfg(new()));
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "", "file.txt")); // Root dir case where Path.GetDirectoryName might be null or empty
-        // No exception and nothing scheduled is what we expect
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/unwatched", "file.txt"));
         Assert.Empty(app._pendingTokens);
     }
 
@@ -291,16 +295,6 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.RunHookAsync("cmd", "/tmp", default);
         var logs = LogService.GetRecentLogs().ToList();
         Assert.Contains(logs, l => l.Level == LogLevel.Error && l.Message.Contains("Hook failed"));
-    }
-
-    private sealed class FakeProcessRunnerWithThrow : IProcessRunner
-    {
-        public bool ShouldThrow { get; set; }
-        public Task<int> RunAsync(string command, string workingDirectory, Action<string> onOutput, Action<string> onError, CancellationToken token)
-        {
-            if (ShouldThrow) throw new Exception("fail");
-            return Task.FromResult(0);
-        }
     }
 
     [Fact]

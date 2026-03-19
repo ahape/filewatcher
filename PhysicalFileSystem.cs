@@ -3,6 +3,11 @@ using System.IO;
 
 namespace FileWatcher;
 
+/// <summary>
+/// Production implementation of <see cref="IFileSystem"/> that delegates directly to
+/// <see cref="System.IO.File"/>, <see cref="System.IO.Directory"/>, and
+/// <see cref="System.IO.FileInfo"/>.
+/// </summary>
 internal sealed class PhysicalFileSystem : IFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);

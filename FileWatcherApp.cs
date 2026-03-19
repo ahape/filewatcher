@@ -75,6 +75,10 @@ internal sealed class FileWatcherApp(
         await RunConsoleLoopAsync(token);
     }
 
+    /// <summary>
+    /// Writes <paramref name="message"/> at <see cref="LogLevel.Debug"/> only when the configured
+    /// log level is <c>Debug</c> or <c>Trace</c>, keeping noise out of normal output.
+    /// </summary>
     private void LogDebug(string message)
     {
         if (
@@ -86,6 +90,14 @@ internal sealed class FileWatcherApp(
         }
     }
 
+    /// <summary>
+    /// Polls the console for key presses at a fixed interval until the token is cancelled.
+    /// <list type="bullet">
+    ///   <item><c>r</c> — reload configuration in place.</item>
+    ///   <item><c>q</c> — graceful exit (throws <see cref="OperationCanceledException"/>).</item>
+    ///   <item>any other key — print a brief status summary.</item>
+    /// </list>
+    /// </summary>
     private async Task RunConsoleLoopAsync(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -109,6 +121,10 @@ internal sealed class FileWatcherApp(
         }
     }
 
+    /// <summary>
+    /// Reloads <c>watchconfig.json</c>, recreates all file watchers, and re-runs startup hooks.
+    /// On failure the error is logged and the previous configuration remains active.
+    /// </summary>
     internal async Task ReloadConfigurationAsync(CancellationToken token)
     {
         try
@@ -125,6 +141,12 @@ internal sealed class FileWatcherApp(
         }
     }
 
+    /// <summary>
+    /// Reads and deserializes <c>watchconfig.json</c> from <see cref="_configPath"/>,
+    /// replacing the current <see cref="Config"/>.
+    /// Throws <see cref="FileNotFoundException"/> if the file is absent and
+    /// <see cref="InvalidOperationException"/> if it is empty or unparseable.
+    /// </summary>
     internal async Task LoadConfigurationAsync(CancellationToken token)
     {
         if (!_fs.FileExists(_configPath))
@@ -178,6 +200,11 @@ internal sealed class FileWatcherApp(
         LogDebug($"SetupWatchers completed with {_directoryWatchers.Count} active watchers");
     }
 
+    /// <summary>
+    /// Instantiates and wires an <see cref="IFileSystemWatcher"/> for <paramref name="directory"/>,
+    /// routing <c>Changed</c> and <c>Created</c> events to <see cref="HandleFileEvent"/> and
+    /// logging any watcher errors.
+    /// </summary>
     private IFileSystemWatcher CreateWatcher(string directory)
     {
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
@@ -306,12 +333,18 @@ internal sealed class FileWatcherApp(
         });
     }
 
+    /// <summary>Runs every <see cref="StartupEntry"/> command in order, awaiting each in turn.</summary>
     internal async Task RunStartupHooksAsync(CancellationToken token)
     {
         foreach (var entry in _config.Hooks?.OnStartup ?? [])
             await RunHookAsync(entry.Command, entry.Location, token);
     }
 
+    /// <summary>
+    /// Executes a single shell <paramref name="command"/> in <paramref name="location"/>
+    /// (or the current directory when blank), routing output to the log and surfacing a warning
+    /// on non-zero exit codes.
+    /// </summary>
     internal async Task RunHookAsync(string command, string location, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -338,6 +371,7 @@ internal sealed class FileWatcherApp(
         }
     }
 
+    /// <summary>Logs a one-line status summary showing the active watcher and pending-action counts.</summary>
     internal void ShowStatus()
     {
         LogService.Log(
@@ -346,12 +380,14 @@ internal sealed class FileWatcherApp(
         );
     }
 
+    /// <summary>Logs the startup banner with the dashboard URL and available key commands.</summary>
     internal static void PrintWelcome(int port)
     {
         LogService.Log(LogLevel.Success, $"Monitoring started. Dashboard: http://localhost:{port}");
         LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
     }
 
+    /// <summary>Disposes all active <see cref="IFileSystemWatcher"/> instances and clears the registry.</summary>
     private void DisposeWatchers()
     {
         foreach (var w in _directoryWatchers.Values)

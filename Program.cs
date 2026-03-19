@@ -1,9 +1,9 @@
-using System.Runtime.CompilerServices;
-
-[assembly: InternalsVisibleTo("FileWatcher.Tests")]
-
 namespace FileWatcher;
 
+/// <summary>
+/// Application entry point. Wires up graceful Ctrl+C shutdown and delegates
+/// the full lifecycle to <see cref="FileWatcherApp"/>.
+/// </summary>
 internal static class Program
 {
     private const string ConfigFileName = "watchconfig.json";

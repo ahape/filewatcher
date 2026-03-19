@@ -32,11 +32,10 @@ public sealed class ShellProcessRunnerTests : IDisposable
 
     private static readonly ShellProcessRunner Runner = new();
 
-    private static string StdoutCommand(string message) =>
-        OperatingSystem.IsWindows() ? $"echo {message}" : $"echo {message}";
+    // Both shells (cmd.exe and sh) understand these forms, so no per-OS branching is needed.
+    private static string StdoutCommand(string message) => $"echo {message}";
 
-    private static string StderrCommand(string message) =>
-        OperatingSystem.IsWindows() ? $"echo {message} 1>&2" : $"echo {message} 1>&2";
+    private static string StderrCommand(string message) => $"echo {message} 1>&2";
 
     private static string ExitCodeCommand(int code) =>
         OperatingSystem.IsWindows() ? $"exit /b {code}" : $"exit {code}";

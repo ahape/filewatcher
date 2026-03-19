@@ -27,15 +27,9 @@ public class LogWebServerTests : IDisposable
         try
         {
             var server = new DefaultLogWebServer();
-            // Start the server in the background
             var serverTask = Task.Run(() => server.StartAsync(TestPort, _cts.Token));
 
-            // Wait for it to boot
-            await Task.Delay(2000); // Kestrel needs a moment to start
-
-            // ... (rest of the test)
-            // Restore Console.Out for the assertions that might use LogService if any
-            // Actually, we can keep it null until the end.
+            await Task.Delay(2000); // Kestrel needs a moment to bind and start accepting connections
 
             // 1. Test root endpoint (dashboard HTML file)
             var rootResponse = await _client.GetAsync($"http://localhost:{TestPort}/");
