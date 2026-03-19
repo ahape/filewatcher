@@ -80,6 +80,7 @@ internal sealed class FileWatcherApp : IDisposable
         await LoadConfigurationAsync(token);
         SetupWatchers();
         TriggerInitialCopies(immediate: true);
+        await RunStartupHookAsync(token);
         PrintWelcome();
         await RunConsoleLoopAsync(token);
     }
@@ -114,6 +115,7 @@ internal sealed class FileWatcherApp : IDisposable
             await LoadConfigurationAsync(token);
             SetupWatchers();
             TriggerInitialCopies(immediate: true);
+            await RunStartupHookAsync(token);
             WriteSuccess("Configuration reloaded.");
         }
         catch (Exception ex)
@@ -314,6 +316,11 @@ internal sealed class FileWatcherApp : IDisposable
 
             await CopyFileWithRetryAsync(mapping, cts.Token);
             WriteCopySummary(mapping);
+
+            if (!immediate)
+            {
+                await RunUpdateHookAsync(mapping, cts.Token);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -377,6 +384,75 @@ internal sealed class FileWatcherApp : IDisposable
         foreach (var mapping in _directoryMappings.Values.SelectMany(list => list))
         {
             ScheduleCopy(mapping, immediate);
+        }
+    }
+
+    private async Task RunStartupHookAsync(CancellationToken token)
+    {
+        var hook = _config.Hooks?.OnStartup;
+        if (hook != null)
+        {
+            WriteInfo("Executing onStartup hook...");
+            await RunHookAsync(hook, token);
+        }
+    }
+
+    private async Task RunUpdateHookAsync(FileMapping mapping, CancellationToken token)
+    {
+        var hook = _config.Hooks?.OnUpdate;
+        if (hook == null || string.IsNullOrWhiteSpace(hook.Command)) return;
+
+        if (!string.IsNullOrEmpty(hook.ListenTo))
+        {
+            if (string.IsNullOrEmpty(mapping.Id) || !string.Equals(hook.ListenTo, mapping.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        WriteInfo($"Executing onUpdate hook for mapping '{mapping.Source}'...");
+        await RunHookAsync(hook, token);
+    }
+
+    private async Task RunHookAsync(HookEvent hook, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(hook.Command)) return;
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"{hook.Command}\"",
+                WorkingDirectory = string.IsNullOrWhiteSpace(hook.Location) ? Environment.CurrentDirectory : hook.Location,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = new System.Diagnostics.Process { StartInfo = psi };
+
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
+            process.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.Error.WriteLine(e.Data); };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            await process.WaitForExitAsync(token);
+            if (process.ExitCode != 0)
+            {
+                WriteWarning($"Hook exited with code {process.ExitCode}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Failed to run hook: {ex.Message}");
         }
     }
 
@@ -486,6 +562,9 @@ public sealed record class WatchConfig
     [JsonPropertyName("settings")]
     public WatchSettings Settings { get; set; } = new();
 
+    [JsonPropertyName("hooks")]
+    public WatchHooks Hooks { get; set; }
+
     public static WatchConfig CreateSample() => new()
     {
         Settings = new WatchSettings
@@ -516,6 +595,9 @@ public sealed record class WatchConfig
 
 public sealed record class FileMapping
 {
+    [JsonPropertyName("id")]
+    public string Id { get; set; }
+
     [JsonPropertyName("source")]
     public string Source { get; set; } = string.Empty;
 
@@ -539,4 +621,25 @@ public sealed record class WatchSettings
 
     [JsonPropertyName("logLevel")]
     public string LogLevel { get; set; } = "Info";
+}
+
+public sealed record class WatchHooks
+{
+    [JsonPropertyName("onStartup")]
+    public HookEvent OnStartup { get; set; }
+
+    [JsonPropertyName("onUpdate")]
+    public HookEvent OnUpdate { get; set; }
+}
+
+public sealed record class HookEvent
+{
+    [JsonPropertyName("location")]
+    public string Location { get; set; } = string.Empty;
+
+    [JsonPropertyName("command")]
+    public string Command { get; set; } = string.Empty;
+
+    [JsonPropertyName("listenTo")]
+    public string ListenTo { get; set; }
 }
