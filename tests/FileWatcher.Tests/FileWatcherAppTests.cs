@@ -1,10 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
+
+
+
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
+
+
+
 
 namespace FileWatcher.Tests;
 
@@ -707,7 +707,7 @@ public sealed class FileWatcherAppTests : IDisposable
         using var cts = Timeout5s();
         await app.RunHookAsync(new HookEvent { Command = "cmd" }, cts.Token);
 
-        Assert.Contains("something went wrong", _err.ToString());
+        Assert.Contains("something went wrong", _out.ToString());
     }
 
     [Fact]
@@ -927,7 +927,7 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(cts.Token);
         app.SetupWatchers();
 
-        app.PrintWelcome();
+        app.PrintWelcome(5000);
 
         var output = _out.ToString();
         Assert.Contains("Monitoring", output);

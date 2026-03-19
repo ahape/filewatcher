@@ -1,8 +1,8 @@
-using System;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
+
+
+
+
+
 
 namespace FileWatcher.Tests;
 
@@ -58,7 +58,7 @@ public sealed class ShellProcessRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_CommandWithOutput_DeliveredToOnOutputCallback()
     {
-        var received = new System.Collections.Generic.List<string>();
+        List<string> received = [];
 
         using var cts = Timeout5s();
         await Runner.RunAsync(
@@ -74,7 +74,7 @@ public sealed class ShellProcessRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_CommandWithStderr_DeliveredToOnErrorCallback()
     {
-        var received = new System.Collections.Generic.List<string>();
+        List<string> received = [];
 
         using var cts = Timeout5s();
         await Runner.RunAsync(
