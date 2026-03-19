@@ -39,7 +39,7 @@
           "description": "The verbosity level of the logs."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "hooks": {
       "type": "object",
@@ -58,7 +58,7 @@
           "description": "Hook executed when the application is closing."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "mappings": {
       "type": "array",
@@ -88,11 +88,11 @@
             "description": "Human-readable description of what this mapping does."
           }
         },
-        "additionalProperties": false
+        "additionalProperties": true
       }
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "$defs": {
     "hookConfiguration": {
       "type": "object",
@@ -109,7 +109,7 @@
           "description": "The shell command or script to execute."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     }
   }
 }
