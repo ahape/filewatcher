@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("FileWatcher.Tests")]
+
 namespace FileWatcher;
 
 internal static class Program

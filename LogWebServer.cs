@@ -16,34 +16,59 @@ public static class LogWebServer
         b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
         var app = b.Build();
         app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-        app.MapGet("/", async c => { c.Response.ContentType = "text/html"; await c.Response.WriteAsync(Html, token); });
-        app.MapGet("/logs", LogService.GetRecentLogs);
-        app.MapGet("/stream", async c =>
-        {
-            c.Response.Headers.Append("Content-Type", "text/event-stream");
-            c.Response.Headers.Append("Cache-Control", "no-cache");
-            var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-            var onLog = async (LogEntry e) =>
+        app.MapGet(
+            "/",
+            async c =>
             {
+                c.Response.ContentType = "text/html";
+                await c.Response.WriteAsync(Html, token);
+            }
+        );
+        app.MapGet("/logs", LogService.GetRecentLogs);
+        app.MapGet(
+            "/stream",
+            async c =>
+            {
+                c.Response.Headers.Append("Content-Type", "text/event-stream");
+                c.Response.Headers.Append("Cache-Control", "no-cache");
+                var opts = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                };
+                LogService.OnLog += syncOnLog;
                 try
                 {
-                    var json = JsonSerializer.Serialize(e, opts);
-                    await c.Response.WriteAsync($"data: {json}\n\n", token);
-                    await c.Response.Body.FlushAsync(token);
+                    while (
+                        !c.RequestAborted.IsCancellationRequested && !token.IsCancellationRequested
+                    )
+                        await Task.Delay(1000, c.RequestAborted);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                finally
                 {
-                    // Serialization or write failure must not crash the stream handler;
-                    // log the problem and continue so other clients are unaffected.
-                    LogService.Log(LogLevel.Error, $"[Stream] Failed to send log entry: {ex.Message}");
+                    LogService.OnLog -= syncOnLog;
                 }
-            };
-            Action<LogEntry> syncOnLog = e => _ = onLog(e);
-            LogService.OnLog += syncOnLog;
-            try { while (!c.RequestAborted.IsCancellationRequested && !token.IsCancellationRequested) await Task.Delay(1000, c.RequestAborted); }
-            finally { LogService.OnLog -= syncOnLog; }
-        });
-        await Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(app, token);
+                void syncOnLog(LogEntry e) => _ = onLog(e);
+                async Task onLog(LogEntry e)
+                {
+                    try
+                    {
+                        var json = JsonSerializer.Serialize(e, opts);
+                        await c.Response.WriteAsync($"data: {json}\n\n", token);
+                        await c.Response.Body.FlushAsync(token);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Serialization or write failure must not crash the stream handler;
+                        // log the problem and continue so other clients are unaffected.
+                        LogService.Log(
+                            LogLevel.Error,
+                            $"[Stream] Failed to send log entry: {ex.Message}"
+                        );
+                    }
+                }
+            }
+        );
+        await HostingAbstractionsHostExtensions.RunAsync(app, token);
     }
 
     private const string Html = """

@@ -1,9 +1,3 @@
-
-
-
-
-
-
 namespace FileWatcher.Tests;
 
 /// <summary>
@@ -39,19 +33,13 @@ public sealed class ShellProcessRunnerTests : IDisposable
     private static readonly ShellProcessRunner Runner = new();
 
     private static string StdoutCommand(string message) =>
-        OperatingSystem.IsWindows()
-            ? $"echo {message}"
-            : $"echo {message}";
+        OperatingSystem.IsWindows() ? $"echo {message}" : $"echo {message}";
 
     private static string StderrCommand(string message) =>
-        OperatingSystem.IsWindows()
-            ? $"echo {message} 1>&2"
-            : $"echo {message} 1>&2";
+        OperatingSystem.IsWindows() ? $"echo {message} 1>&2" : $"echo {message} 1>&2";
 
     private static string ExitCodeCommand(int code) =>
-        OperatingSystem.IsWindows()
-            ? $"exit /b {code}"
-            : $"exit {code}";
+        OperatingSystem.IsWindows() ? $"exit /b {code}" : $"exit {code}";
 
     private static CancellationTokenSource Timeout5s() => new(TimeSpan.FromSeconds(5));
 
@@ -66,7 +54,8 @@ public sealed class ShellProcessRunnerTests : IDisposable
             Environment.CurrentDirectory,
             line => received.Add(line),
             _ => { },
-            cts.Token);
+            cts.Token
+        );
 
         Assert.Contains(received, line => line.Contains("hello-stdout"));
     }
@@ -82,7 +71,8 @@ public sealed class ShellProcessRunnerTests : IDisposable
             Environment.CurrentDirectory,
             _ => { },
             line => received.Add(line),
-            cts.Token);
+            cts.Token
+        );
 
         Assert.Contains(received, line => line.Contains("hello-stderr"));
     }
@@ -96,7 +86,8 @@ public sealed class ShellProcessRunnerTests : IDisposable
             Environment.CurrentDirectory,
             _ => { },
             _ => { },
-            cts.Token);
+            cts.Token
+        );
 
         Assert.Equal(0, exitCode);
     }
@@ -110,7 +101,8 @@ public sealed class ShellProcessRunnerTests : IDisposable
             Environment.CurrentDirectory,
             _ => { },
             _ => { },
-            cts.Token);
+            cts.Token
+        );
 
         Assert.NotEqual(0, exitCode);
     }

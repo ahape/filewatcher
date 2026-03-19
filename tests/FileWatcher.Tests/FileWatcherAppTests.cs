@@ -4,14 +4,45 @@ namespace FileWatcher.Tests;
 
 public sealed class FileWatcherAppTests : IDisposable
 {
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"fwtest_{Guid.NewGuid():N}");
+    private readonly string _tempDir = Path.Combine(
+        Path.GetTempPath(),
+        $"fwtest_{Guid.NewGuid():N}"
+    );
     private readonly StringWriter _out = new();
-    public FileWatcherAppTests() { Directory.CreateDirectory(_tempDir); Console.SetOut(_out); }
-    public void Dispose() { Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true }); try { Directory.Delete(_tempDir, true); } catch { } }
 
-    private FileWatcherApp CreateApp(string cfg, FakeProcessRunner? r = null) => new(cfg, r ?? new FakeProcessRunner());
-    private string WriteCfg(WatchConfig c) { var p = Path.Combine(_tempDir, "cfg.json"); File.WriteAllText(p, JsonSerializer.Serialize(c)); return p; }
-    private string WriteFile(string n, string c = "test") { var p = Path.Combine(_tempDir, n); Directory.CreateDirectory(Path.GetDirectoryName(p)!); File.WriteAllText(p, c); return p; }
+    public FileWatcherAppTests()
+    {
+        Directory.CreateDirectory(_tempDir);
+        Console.SetOut(_out);
+    }
+
+    public void Dispose()
+    {
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+        try
+        {
+            Directory.Delete(_tempDir, true);
+        }
+        catch { }
+    }
+
+    private FileWatcherApp CreateApp(string cfg, FakeProcessRunner? r = null) =>
+        new(cfg, r ?? new FakeProcessRunner());
+
+    private string WriteCfg(WatchConfig c)
+    {
+        var p = Path.Combine(_tempDir, "cfg.json");
+        File.WriteAllText(p, JsonSerializer.Serialize(c));
+        return p;
+    }
+
+    private string WriteFile(string n, string c = "test")
+    {
+        var p = Path.Combine(_tempDir, n);
+        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+        File.WriteAllText(p, c);
+        return p;
+    }
 
     [Fact]
     public async Task LoadConfiguration_ValidFile_PopulatesConfig()
@@ -32,7 +63,11 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task SetupWatchers_EnabledEntry_CreatesWatcher()
     {
         var src = WriteFile("a.txt");
-        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }));
+        var app = CreateApp(
+            WriteCfg(
+                new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }
+            )
+        );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
         Assert.Single(app._directoryWatchers);
@@ -41,8 +76,23 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task SetupWatchers_TwoFilesSameDir_OneWatcher()
     {
-        var s1 = WriteFile("1.txt"); var s2 = WriteFile("2.txt");
-        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Source = s1, Enabled = true }, new() { Source = s2, Enabled = true }] } }));
+        var s1 = WriteFile("1.txt");
+        var s2 = WriteFile("2.txt");
+        var app = CreateApp(
+            WriteCfg(
+                new()
+                {
+                    Hooks = new()
+                    {
+                        OnUpdate =
+                        [
+                            new() { Source = s1, Enabled = true },
+                            new() { Source = s2, Enabled = true },
+                        ],
+                    },
+                }
+            )
+        );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
         Assert.Single(app._directoryWatchers);
@@ -52,7 +102,11 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task HandleFileEvent_ValidFile_SchedulesActions()
     {
         var src = WriteFile("s.txt");
-        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }));
+        var app = CreateApp(
+            WriteCfg(
+                new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }
+            )
+        );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
         app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "s.txt"));
@@ -62,7 +116,8 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task ScheduleActions_CopiesFile()
     {
-        var src = WriteFile("s.txt", "content"); var dst = Path.Combine(_tempDir, "d.txt");
+        var src = WriteFile("s.txt", "content");
+        var dst = Path.Combine(_tempDir, "d.txt");
         var app = CreateApp(WriteCfg(new() { Settings = new() { DebounceMs = 0 } }));
         await app.LoadConfigurationAsync(default);
         app.ScheduleActions(new() { Source = src, CopyTo = dst });
@@ -73,15 +128,18 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task RunHookAsync_InvokesRunner()
     {
-        var r = new FakeProcessRunner(); var app = CreateApp("cfg.json", r);
+        var r = new FakeProcessRunner();
+        var app = CreateApp("cfg.json", r);
         await app.RunHookAsync("cmd", _tempDir, default);
-        Assert.Single(r.Calls); Assert.Equal("cmd", r.Calls[0].Command);
+        Assert.Single(r.Calls);
+        Assert.Equal("cmd", r.Calls[0].Command);
     }
 
     [Fact]
     public async Task RunStartupHooksAsync_InvokesRunner()
     {
-        var r = new FakeProcessRunner(); var app = CreateApp("cfg.json", r);
+        var r = new FakeProcessRunner();
+        var app = CreateApp("cfg.json", r);
         app.Config = new() { Hooks = new() { OnStartup = [new() { Command = "start" }] } };
         await app.RunStartupHooksAsync(default);
         Assert.Single(r.Calls);
@@ -91,8 +149,12 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task ReloadConfiguration_UpdatesSettings()
     {
         var p = WriteCfg(new() { Settings = new() { DebounceMs = 1 } });
-        var app = CreateApp(p); await app.LoadConfigurationAsync(default);
-        File.WriteAllText(p, JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }));
+        var app = CreateApp(p);
+        await app.LoadConfigurationAsync(default);
+        File.WriteAllText(
+            p,
+            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } })
+        );
         await app.ReloadConfigurationAsync(default);
         Assert.Equal(9, app.Config.Settings.DebounceMs);
     }

@@ -30,12 +30,15 @@ public sealed class LogServiceTests : IDisposable
     // ─────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(LogLevel.Info,    "[INFO]")]
+    [InlineData(LogLevel.Info, "[INFO]")]
     [InlineData(LogLevel.Success, "[SUCCESS]")]
     [InlineData(LogLevel.Warning, "[WARNING]")]
-    [InlineData(LogLevel.Error,   "[ERROR]")]
-    [InlineData(LogLevel.Copy,    "[COPY]")]
-    public void Log_NonEmptyMessage_PrefixesOutputWithLevelName(LogLevel level, string expectedPrefix)
+    [InlineData(LogLevel.Error, "[ERROR]")]
+    [InlineData(LogLevel.Copy, "[COPY]")]
+    public void Log_NonEmptyMessage_PrefixesOutputWithLevelName(
+        LogLevel level,
+        string expectedPrefix
+    )
     {
         LogService.Log(level, "test message");
 
@@ -51,8 +54,8 @@ public sealed class LogServiceTests : IDisposable
 
         // A blank line should contain no level prefix — it is used as a visual spacer.
         var output = _out.ToString();
-        Assert.DoesNotContain("[INFO]",    output);
-        Assert.DoesNotContain("[ERROR]",   output);
+        Assert.DoesNotContain("[INFO]", output);
+        Assert.DoesNotContain("[ERROR]", output);
         Assert.DoesNotContain("[WARNING]", output);
         // The output should still end with a newline (blank line written).
         Assert.EndsWith(Environment.NewLine, output);

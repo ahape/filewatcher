@@ -10,13 +10,23 @@ public sealed record WatchConfig
     public WatchHooks? Hooks { get; set; }
 
     /// <summary>Returns a minimal sample configuration suitable for first-run seeding.</summary>
-    public static WatchConfig CreateSample() => new()
-    {
-        Settings = new() { DebounceMs = 1000, DashboardPort = 5000 },
-        Hooks = new()
+    public static WatchConfig CreateSample() =>
+        new()
         {
-            OnStartup = [new() { Command = "echo started" }],
-            OnUpdate = [new() { Source = "src/file.js", CopyTo = "out/file.js", Command = "echo updated", Description = "App script" }]
-        }
-    };
+            Settings = new() { DebounceMs = 1000, DashboardPort = 5000 },
+            Hooks = new()
+            {
+                OnStartup = [new() { Command = "echo started" }],
+                OnUpdate =
+                [
+                    new()
+                    {
+                        Source = "src/file.js",
+                        CopyTo = "out/file.js",
+                        Command = "echo updated",
+                        Description = "App script",
+                    },
+                ],
+            },
+        };
 }

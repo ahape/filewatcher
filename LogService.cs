@@ -24,7 +24,8 @@ public static class LogService
     {
         var entry = new LogEntry(DateTime.Now, level, message);
         _logs.Enqueue(entry);
-        while (_logs.Count > MaxLogEntries) _logs.TryDequeue(out _);
+        while (_logs.Count > MaxLogEntries)
+            _logs.TryDequeue(out _);
 
         var oldColor = Console.ForegroundColor;
         Console.ForegroundColor = level switch
@@ -33,7 +34,7 @@ public static class LogService
             LogLevel.Success or LogLevel.Copy => ConsoleColor.Green,
             LogLevel.Warning => ConsoleColor.Yellow,
             LogLevel.Error => ConsoleColor.Red,
-            _ => ConsoleColor.Gray
+            _ => ConsoleColor.Gray,
         };
 
         // Prefix every non-empty line with a text level indicator so the output is
