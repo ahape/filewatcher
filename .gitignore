@@ -3,3 +3,6 @@ bin/
 watchconfig.json
 node_modules/
 package-lock.json
+coverage/
+TestResults/
+.tools/
