@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="dashboard.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
     <None Remove="tests\**\*" />
   </ItemGroup>
