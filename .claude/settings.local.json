@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "brightmetrics-projects-plugin@brightmetrics-plugins": true
+  }
+}

@@ -18,12 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\filewatcher.csproj" />
+    <ProjectReference Include="..\FileWatcher\FileWatcher.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Content
-      Include="..\..\dashboard.html"
+      Include="..\FileWatcher\dashboard.html"
       Link="dashboard.html"
       CopyToOutputDirectory="PreserveNewest"
     />

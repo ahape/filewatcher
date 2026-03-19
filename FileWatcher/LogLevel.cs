@@ -20,4 +20,7 @@ public enum LogLevel
 
     /// <summary>File-copy completion messages, displayed in green alongside <see cref="Success"/>.</summary>
     Copy,
+
+    /// <summary>Suppresses all output when used as a hook's log level.</summary>
+    None,
 }

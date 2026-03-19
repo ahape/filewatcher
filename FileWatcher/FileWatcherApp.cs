@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,12 +35,13 @@ internal sealed class FileWatcherApp(
     private const int DefaultDashboardPort = 5002;
 
     private static readonly TimeSpan s_keyPollInterval = TimeSpan.FromMilliseconds(75);
-    private static readonly JsonSerializerOptions SerializerOptions = new()
+    private static readonly JsonSerializerOptions s_serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
+        Converters = { new JsonStringEnumConverter() },
     };
 
     /// <summary>
@@ -134,7 +136,7 @@ internal sealed class FileWatcherApp(
 
         await using Stream stream = _fs.OpenRead(_configPath);
         Config =
-            await JsonSerializer.DeserializeAsync<WatchConfig>(stream, SerializerOptions, token)
+            await JsonSerializer.DeserializeAsync<WatchConfig>(stream, s_serializerOptions, token)
             ?? throw new InvalidOperationException("Configuration file is empty or malformed.");
         Config.Settings ??= new WatchSettings();
         Config.Hooks ??= new WatchHooks();
@@ -199,7 +201,7 @@ internal sealed class FileWatcherApp(
     internal async Task RunStartupHooksAsync(CancellationToken token)
     {
         foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
-            await RunHookAsync(entry.Command, entry.Location, token);
+            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, token);
     }
 
     /// <summary>
@@ -207,7 +209,12 @@ internal sealed class FileWatcherApp(
     /// (or the current directory when blank), routing output to the log and surfacing a
     /// warning on non-zero exit codes.
     /// </summary>
-    internal async Task RunHookAsync(string command, string location, CancellationToken token)
+    internal async Task RunHookAsync(
+        string command,
+        string location,
+        LogLevel hookLogLevel,
+        CancellationToken token
+    )
     {
         if (string.IsNullOrWhiteSpace(command))
             return;
@@ -216,14 +223,15 @@ internal sealed class FileWatcherApp(
             string workingDirectory = string.IsNullOrWhiteSpace(location)
                 ? Environment.CurrentDirectory
                 : location;
+            bool silent = hookLogLevel == LogLevel.None;
             int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
-                line => LogService.Log(LogLevel.Info, $"[Hook] {line}"),
-                line => LogService.Log(LogLevel.Error, $"[Hook Error] {line}"),
+                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[Hook] {line}"),
+                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[Hook Error] {line}"),
                 token
             );
-            if (exitCode != 0)
+            if (exitCode != 0 && !silent)
                 LogService.Log(LogLevel.Warning, $"Hook exited with code {exitCode}");
         }
         catch (OperationCanceledException) { }
@@ -428,7 +436,7 @@ internal sealed class FileWatcherApp(
         if (!string.IsNullOrWhiteSpace(entry.Command))
         {
             LogDebug($"Running command: {entry.Command}");
-            await RunHookAsync(entry.Command, entry.Location, token);
+            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, token);
         }
     }
 

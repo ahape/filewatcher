@@ -63,6 +63,12 @@
         "location": {
           "type": "string",
           "description": "Working directory for the command. Defaults to the current directory."
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": ["None", "Debug", "Info", "Success", "Warning", "Error", "Copy"],
+          "default": "Info",
+          "description": "Log level for this entry's hook output. Set to 'None' to suppress all output."
         }
       },
       "required": ["command"],
@@ -96,6 +102,12 @@
         "description": {
           "type": "string",
           "description": "Human-readable description shown in summaries and warnings."
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": ["None", "Debug", "Info", "Success", "Warning", "Error", "Copy"],
+          "default": "Info",
+          "description": "Log level for this entry's hook output. Set to 'None' to suppress all output."
         }
       },
       "required": ["source"],

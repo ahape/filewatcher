@@ -182,7 +182,7 @@ public sealed class FileWatcherAppTests : IDisposable
     {
         var r = new FakeProcessRunner();
         var app = CreateApp("/cfg.json", r);
-        await app.RunHookAsync("cmd", "/tmp", default);
+        await app.RunHookAsync("cmd", "/tmp", LogLevel.Info, default);
         Assert.Single(r.Calls);
         Assert.Equal("cmd", r.Calls[0].Command);
     }
@@ -330,7 +330,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var r = new FakeProcessRunner();
         r.ShouldThrow = true;
         var app = CreateApp("/cfg.json", r);
-        await app.RunHookAsync("cmd", "/tmp", default);
+        await app.RunHookAsync("cmd", "/tmp", LogLevel.Info, default);
         var logs = LogService.GetRecentLogs().ToList();
         Assert.Contains(logs, l => l.Level == LogLevel.Error && l.Message.Contains("Hook failed"));
     }
