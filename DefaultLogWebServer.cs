@@ -9,9 +9,9 @@ using Microsoft.Extensions.Logging;
 
 namespace FileWatcher;
 
-public static class LogWebServer
+internal sealed class DefaultLogWebServer : ILogWebServer
 {
-    public static async Task StartAsync(int port, CancellationToken token)
+    public async Task StartAsync(int port, CancellationToken token)
     {
         var b = WebApplication.CreateBuilder();
         b.Logging.ClearProviders();

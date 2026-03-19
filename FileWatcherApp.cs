@@ -15,7 +15,9 @@ namespace FileWatcher;
 internal sealed class FileWatcherApp(
     string configPath,
     IProcessRunner? processRunner = null,
-    IFileSystem? fileSystem = null
+    IFileSystem? fileSystem = null,
+    ILogWebServer? webServer = null,
+    IConsole? console = null
 ) : IDisposable
 {
     private static readonly TimeSpan KeyPollInterval = TimeSpan.FromMilliseconds(75);
@@ -31,6 +33,8 @@ internal sealed class FileWatcherApp(
     private readonly string _configPath = configPath;
     private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
     private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
+    private readonly ILogWebServer _webServer = webServer ?? new DefaultLogWebServer();
+    private readonly IConsole _console = console ?? new SystemConsole();
 
     internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(
         StringComparer.OrdinalIgnoreCase
@@ -65,7 +69,7 @@ internal sealed class FileWatcherApp(
             _config.Settings.DashboardPort > 0
                 ? _config.Settings.DashboardPort
                 : DefaultDashboardPort;
-        _ = LogWebServer.StartAsync(port, token);
+        _ = _webServer.StartAsync(port, token);
 
         PrintWelcome(port);
         await RunConsoleLoopAsync(token);
@@ -86,9 +90,9 @@ internal sealed class FileWatcherApp(
     {
         while (!token.IsCancellationRequested)
         {
-            if (Console.KeyAvailable)
+            if (_console.KeyAvailable)
             {
-                var key = Console.ReadKey(true);
+                var key = _console.ReadKey(true);
                 switch (char.ToLowerInvariant(key.KeyChar))
                 {
                     case 'r':

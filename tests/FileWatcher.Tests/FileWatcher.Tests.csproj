@@ -20,4 +20,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\filewatcher.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\dashboard.html" Link="dashboard.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

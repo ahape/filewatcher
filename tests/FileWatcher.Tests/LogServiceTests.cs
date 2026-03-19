@@ -5,6 +5,7 @@ namespace FileWatcher.Tests;
 /// Each test calls <see cref="LogService.Clear"/> in its setup to guarantee isolation
 /// from other tests that write to the same static queue.
 /// </summary>
+[Collection("Log tests")]
 public sealed class LogServiceTests : IDisposable
 {
     private readonly StringWriter _out;

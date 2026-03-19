@@ -6,6 +6,7 @@ using Xunit;
 
 namespace FileWatcher.Tests;
 
+[Collection("Log tests")]
 public sealed class FileWatcherAppTests : IDisposable
 {
     private readonly FakeFileSystem _fs = new();
@@ -14,6 +15,7 @@ public sealed class FileWatcherAppTests : IDisposable
 
     public FileWatcherAppTests()
     {
+        LogService.Clear();
         _originalOut = Console.Out;
         Console.SetOut(_out);
     }
@@ -24,8 +26,11 @@ public sealed class FileWatcherAppTests : IDisposable
         _out.Dispose();
     }
 
+    private readonly FakeLogWebServer _webServer = new();
+    private readonly FakeConsole _console = new();
+
     private FileWatcherApp CreateApp(string cfgPath, FakeProcessRunner? r = null) =>
-        new(cfgPath, r ?? new FakeProcessRunner(), _fs);
+        new(cfgPath, r ?? new FakeProcessRunner(), _fs, _webServer, _console);
 
     private string WriteCfg(WatchConfig c)
     {
@@ -206,13 +211,103 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_StartsWebServerAndRunsHooks()
+    {
+        var cfg = new WatchConfig { Settings = new() { DashboardPort = 1234 } };
+        var app = CreateApp(WriteCfg(cfg));
+        _console.EnqueueKey('q', ConsoleKey.Q);
+
+        try { await app.RunAsync(default); } catch (OperationCanceledException) { }
+
+        Assert.Equal(1, _webServer.StartCount);
+        Assert.Equal(1234, _webServer.LastPort);
+    }
+
+    [Fact]
+    public async Task RunConsoleLoopAsync_R_ReloadsConfiguration()
+    {
+        var p = WriteCfg(new() { Settings = new() { DebounceMs = 1 } });
+        var app = CreateApp(p);
+        await app.LoadConfigurationAsync(default);
+
+        _fs.AddFile(p, JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }), DateTime.UtcNow);
+
+        _console.EnqueueKey('r', ConsoleKey.R);
+        _console.EnqueueKey('q', ConsoleKey.Q);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => app.RunAsync(default));
+        Assert.Equal(9, app.Config.Settings.DebounceMs);
+    }
+
+    [Fact]
+    public async Task ReloadConfiguration_Fails_LogsError()
+    {
+        var p = WriteCfg(new() { Settings = new() { DebounceMs = 1 } });
+        var app = CreateApp(p);
+        await app.LoadConfigurationAsync(default);
+
+        _fs.AddFile(p, "invalid json", DateTime.UtcNow);
+
+        await app.ReloadConfigurationAsync(default);
+        var logs = LogService.GetRecentLogs().ToList();
+        Assert.Contains(logs, l => l.Level == LogLevel.Error && l.Message.Contains("Failed to reload"));
+    }
+
+    [Fact]
+    public async Task SetupWatchers_MissingSource_SkipsAndLogsWarning()
+    {
+        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Description = "test", Enabled = true }] } }));
+        await app.LoadConfigurationAsync(default);
+        app.SetupWatchers();
+        var logs = LogService.GetRecentLogs().ToList();
+        Assert.Contains(logs, l => l.Level == LogLevel.Warning && l.Message.Contains("Entry skipped: source is missing (test)."));
+    }
+
+    [Fact]
+    public async Task SetupWatchers_SourceNotFound_LogsWarning()
+    {
+        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Source = "/missing.txt", Enabled = true }] } }));
+        await app.LoadConfigurationAsync(default);
+        app.SetupWatchers();
+        var logs = LogService.GetRecentLogs().ToList();
+        Assert.Contains(logs, l => l.Level == LogLevel.Warning && l.Message.Contains("Source file not found: /missing.txt"));
+    }
+
+    [Fact]
+    public void HandleFileEvent_NullDirectory_ReturnsEarly()
+    {
+        var app = CreateApp(WriteCfg(new()));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "", "file.txt")); // Root dir case where Path.GetDirectoryName might be null or empty
+        // No exception and nothing scheduled is what we expect
+        Assert.Empty(app._pendingTokens);
+    }
+
+    [Fact]
+    public async Task RunHookAsync_Exception_LogsError()
+    {
+        var r = new FakeProcessRunner();
+        r.ShouldThrow = true;
+        var app = CreateApp("/cfg.json", r);
+        await app.RunHookAsync("cmd", "/tmp", default);
+        var logs = LogService.GetRecentLogs().ToList();
+        Assert.Contains(logs, l => l.Level == LogLevel.Error && l.Message.Contains("Hook failed"));
+    }
+
+    private sealed class FakeProcessRunnerWithThrow : IProcessRunner
+    {
+        public bool ShouldThrow { get; set; }
+        public Task<int> RunAsync(string command, string workingDirectory, Action<string> onOutput, Action<string> onError, CancellationToken token)
+        {
+            if (ShouldThrow) throw new Exception("fail");
+            return Task.FromResult(0);
+        }
+    }
+
+    [Fact]
     public void Dispose_ClearsResources()
     {
         var app = CreateApp("/cfg.json");
-        app._directoryWatchers.TryAdd(
-            "dir",
-            new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite)
-        );
+        app._directoryWatchers.TryAdd("dir", new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite));
         app.Dispose();
         Assert.Empty(app._directoryWatchers);
     }

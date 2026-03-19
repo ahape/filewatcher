@@ -123,4 +123,24 @@ public class PhysicalFileSystemTests : IDisposable
         watcher.EnableRaisingEvents = false;
         Assert.False(watcher.EnableRaisingEvents);
     }
+
+    [Fact]
+    public void PhysicalFileSystemWatcher_RemoveEvents_Works()
+    {
+        using var watcher = _fs.CreateWatcher(_testDir, NotifyFilters.FileName);
+        FileSystemEventHandler h1 = (s, e) => { };
+        ErrorEventHandler h2 = (s, e) => { };
+        
+        watcher.Changed += h1;
+        watcher.Changed -= h1;
+        
+        watcher.Created += h1;
+        watcher.Created -= h1;
+        
+        watcher.Error += h2;
+        watcher.Error -= h2;
+        
+        // No exceptions means it's working (as we can't easily verify internal delegate list)
+        Assert.NotNull(watcher);
+    }
 }

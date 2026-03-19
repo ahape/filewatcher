@@ -26,8 +26,9 @@ public class LogWebServerTests : IDisposable
         Console.SetOut(TextWriter.Null);
         try
         {
+            var server = new DefaultLogWebServer();
             // Start the server in the background
-            var serverTask = Task.Run(() => LogWebServer.StartAsync(TestPort, _cts.Token));
+            var serverTask = Task.Run(() => server.StartAsync(TestPort, _cts.Token));
 
             // Wait for it to boot
             await Task.Delay(2000); // Kestrel needs a moment to start

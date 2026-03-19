@@ -8,6 +8,7 @@ internal sealed class FakeProcessRunner : IProcessRunner
     public int ExitCode { get; set; } = 0;
     public string? OutputLine { get; set; }
     public string? ErrorLine { get; set; }
+    public bool ShouldThrow { get; set; }
 
     public Task<int> RunAsync(
         string command,
@@ -17,6 +18,7 @@ internal sealed class FakeProcessRunner : IProcessRunner
         CancellationToken token
     )
     {
+        if (ShouldThrow) throw new Exception("fail");
         token.ThrowIfCancellationRequested();
         Calls.Add(new Call(command, workingDirectory));
         if (OutputLine != null)
