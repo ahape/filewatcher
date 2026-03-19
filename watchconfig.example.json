@@ -4,28 +4,29 @@
     "logLevel": "Debug"
   },
   "hooks": {
-    "onStartup": {
-      "location": "./scripts",
-      "command": "echo 'Starting up!'"
-    },
-    "onUpdate": {
-      "listenTo": "my-app-bundle",
-      "location": "./src/app",
-      "command": "echo 'Bundle updated.'"
-    }
-  },
-  "mappings": [
-    {
-      "id": "my-app-bundle",
-      "source": "./src/app/bundle.js",
-      "destination": "./dist/app.js",
-      "description": "Main application javascript bundle"
-    },
-    {
-      "source": "./assets/styles/main.css",
-      "destination": "./public/css/styles.css",
-      "enabled": false,
-      "description": "Main CSS file (currently disabled)"
-    }
-  ]
+    "onStartup": [
+      { "command": "echo 'Starting up!'" },
+      { "location": "./scripts", "command": "npm install" }
+    ],
+    "onUpdate": [
+      {
+        "source": "./src/app/bundle.js",
+        "copyTo": "./dist/app.js",
+        "command": "echo 'Bundle updated.'",
+        "location": "./src/app",
+        "description": "Main application javascript bundle"
+      },
+      {
+        "source": "./assets/styles/main.css",
+        "copyTo": "./public/css/styles.css",
+        "enabled": false,
+        "description": "Main CSS file (currently disabled)"
+      },
+      {
+        "source": "./config/app.env",
+        "command": "systemctl restart my-app",
+        "description": "Restart service when config changes (no file copy needed)"
+      }
+    ]
+  }
 }

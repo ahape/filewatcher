@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Watch Configuration Schema",
-  "description": "Configuration file for file watching and syncing.",
+  "description": "Configuration file for the filewatcher tool.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -21,87 +21,89 @@
         "createBackups": {
           "type": "boolean",
           "default": false,
-          "description": "Whether to create backups of files before overwriting."
+          "description": "Whether to create timestamped backups of destination files before overwriting."
         },
         "logLevel": {
           "type": "string",
           "enum": ["Trace", "Debug", "Info", "Warn", "Error", "Fatal", "None"],
           "default": "Info",
           "description": "The verbosity of the console output."
+        },
+        "dashboardPort": {
+          "type": "integer",
+          "default": 5000,
+          "description": "TCP port for the web dashboard."
         }
       },
       "additionalProperties": false
     },
     "hooks": {
       "type": "object",
-      "description": "Commands to execute on specific lifecycle events.",
+      "description": "Lifecycle event handlers.",
       "properties": {
         "onStartup": {
-          "$ref": "#/definitions/hookEvent"
+          "type": "array",
+          "description": "Commands to run once when the application starts or after a config reload.",
+          "items": { "$ref": "#/definitions/startupEntry" }
         },
         "onUpdate": {
-          "$ref": "#/definitions/hookEvent"
+          "type": "array",
+          "description": "Entries that watch a source file and act on changes.",
+          "items": { "$ref": "#/definitions/updateEntry" }
         }
       },
       "additionalProperties": false
-    },
-    "mappings": {
-      "type": "array",
-      "description": "List of files or directories to sync/watch.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "A unique identifier for the mapping, used to link hooks to specific mappings."
-          },
-          "source": {
-            "type": "string",
-            "description": "The absolute or relative path to the source file or directory."
-          },
-          "destination": {
-            "type": "string",
-            "description": "The absolute or relative path to the destination file or directory."
-          },
-          "enabled": {
-            "type": "boolean",
-            "default": true,
-            "description": "Whether this mapping is currently active."
-          },
-          "description": {
-            "type": "string",
-            "description": "A human-readable description of what this mapping does."
-          }
-        },
-        "required": [
-          "source",
-          "destination"
-        ],
-        "additionalProperties": false
-      }
     }
   },
   "additionalProperties": false,
   "definitions": {
-    "hookEvent": {
+    "startupEntry": {
       "type": "object",
+      "description": "A command to execute on startup.",
       "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute."
+        },
         "location": {
           "type": "string",
-          "description": "The working directory where the command should be executed."
+          "description": "Working directory for the command. Defaults to the current directory."
+        }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    },
+    "updateEntry": {
+      "type": "object",
+      "description": "Watches a source file; optionally copies it and/or runs a command on change.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Absolute or relative path to the source file to watch."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "When false, this entry is skipped entirely."
+        },
+        "copyTo": {
+          "type": "string",
+          "description": "Destination path to copy the source file to on change. Omit to skip copying."
         },
         "command": {
           "type": "string",
-          "description": "The terminal command to run."
+          "description": "Shell command to run after a change (and after copying, if applicable). Omit to skip."
         },
-        "listenTo": {
+        "location": {
           "type": "string",
-          "description": "The ID of a mapping to watch. If omitted, the hook applies globally."
+          "description": "Working directory for the command. Defaults to the current directory."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description shown in summaries and warnings."
         }
       },
-      "required": [
-        "command"
-      ],
+      "required": ["source"],
       "additionalProperties": false
     }
   }

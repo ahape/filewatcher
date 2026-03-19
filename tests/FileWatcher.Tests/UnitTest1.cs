@@ -7,13 +7,14 @@ public class WatchConfigTests
     private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     [Fact]
-    public void CreateSample_ReturnsMappingsAndSettings()
+    public void CreateSample_ReturnsHooksAndSettings()
     {
         var sample = WatchConfig.CreateSample();
         Assert.NotNull(sample);
         Assert.NotNull(sample.Settings);
-        Assert.NotEmpty(sample.Mappings);
-        Assert.Contains(sample.Mappings, mapping => mapping.Enabled);
+        Assert.NotNull(sample.Hooks);
+        Assert.NotEmpty(sample.Hooks!.OnUpdate);
+        Assert.NotEmpty(sample.Hooks.OnStartup);
     }
 
     [Fact]
@@ -23,7 +24,7 @@ public class WatchConfigTests
         var json = JsonSerializer.Serialize(sample, SerializerOptions);
         var roundTrip = JsonSerializer.Deserialize<WatchConfig>(json, SerializerOptions);
         Assert.NotNull(roundTrip);
-        Assert.Equal(sample.Mappings.Count, roundTrip!.Mappings.Count);
+        Assert.Equal(sample.Hooks!.OnUpdate.Count, roundTrip!.Hooks!.OnUpdate.Count);
         Assert.Equal(sample.Settings.CreateBackups, roundTrip.Settings.CreateBackups);
     }
 
@@ -35,8 +36,8 @@ public class WatchConfigTests
         var json = File.ReadAllText(examplePath);
         var config = JsonSerializer.Deserialize<WatchConfig>(json, SerializerOptions);
         Assert.NotNull(config);
-        Assert.NotEmpty(config!.Mappings);
-        Assert.All(config.Mappings, mapping => Assert.False(string.IsNullOrWhiteSpace(mapping.Source)));
+        Assert.NotEmpty(config!.Hooks!.OnUpdate);
+        Assert.All(config.Hooks.OnUpdate, entry => Assert.False(string.IsNullOrWhiteSpace(entry.Source)));
     }
 
     private static string GetRepoRoot() => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));

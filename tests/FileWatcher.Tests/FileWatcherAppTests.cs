@@ -1,10 +1,4 @@
-
-
-
 using System.Text.Json;
-
-
-
 
 namespace FileWatcher.Tests;
 
@@ -50,11 +44,9 @@ public sealed class FileWatcherAppTests : IDisposable
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Creates a FileWatcherApp wired to a FakeProcessRunner.</summary>
     private FileWatcherApp CreateApp(string configPath, FakeProcessRunner? runner = null)
         => new(configPath, runner ?? new FakeProcessRunner());
 
-    /// <summary>Creates a FileWatcherApp wired to a specific FakeProcessRunner instance.</summary>
     private (FileWatcherApp App, FakeProcessRunner Runner) CreateAppWithRunner(string configPath)
     {
         var runner = new FakeProcessRunner();
@@ -132,9 +124,9 @@ public sealed class FileWatcherAppTests : IDisposable
         var sourceFile = WriteTempFile("src.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = sourceFile, Destination = Path.Combine(_tempDir, "dst.txt"), Enabled = true }
+                OnUpdate = [new() { Source = sourceFile, CopyTo = Path.Combine(_tempDir, "dst.txt"), Enabled = true }]
             },
             Settings = new WatchSettings { DebounceMs = 500 }
         };
@@ -143,7 +135,7 @@ public sealed class FileWatcherAppTests : IDisposable
         using var cts = Timeout5s();
         await app.LoadConfigurationAsync(cts.Token);
 
-        Assert.Single(app.Config.Mappings);
+        Assert.Single(app.Config.Hooks!.OnUpdate);
         Assert.Equal(500, app.Config.Settings.DebounceMs);
     }
 
@@ -172,7 +164,7 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadConfiguration_EmptyDocument_DefaultsMappingsAndSettings()
+    public async Task LoadConfiguration_EmptyDocument_DefaultsHooksAndSettings()
     {
         var configPath = Path.Combine(_tempDir, "empty.json");
         File.WriteAllText(configPath, "{}");
@@ -181,80 +173,66 @@ public sealed class FileWatcherAppTests : IDisposable
         using var cts = Timeout5s();
         await app.LoadConfigurationAsync(cts.Token);
 
-        Assert.NotNull(app.Config.Mappings);
+        Assert.NotNull(app.Config.Hooks);
         Assert.NotNull(app.Config.Settings);
-        Assert.Empty(app.Config.Mappings);
+        Assert.Empty(app.Config.Hooks!.OnUpdate);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // ValidateMapping
+    // ValidateEntry
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ValidateMapping_ValidSourceAndDestination_ReturnsTrue()
+    public void ValidateEntry_ValidSource_ReturnsTrue()
     {
         var sourceFile = WriteTempFile("valid.txt");
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
 
-        var result = app.ValidateMapping(new FileMapping
-        {
-            Source = sourceFile,
-            Destination = Path.Combine(_tempDir, "out", "valid.txt")
-        });
+        var result = app.ValidateEntry(new UpdateEntry { Source = sourceFile });
 
         Assert.True(result);
     }
 
     [Fact]
-    public void ValidateMapping_EmptySource_ReturnsFalse()
+    public void ValidateEntry_EmptySource_ReturnsFalse()
     {
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
 
-        var result = app.ValidateMapping(new FileMapping
-        {
-            Source = "",
-            Destination = Path.Combine(_tempDir, "out.txt")
-        });
+        var result = app.ValidateEntry(new UpdateEntry { Source = "" });
 
         Assert.False(result);
     }
 
     [Fact]
-    public void ValidateMapping_EmptyDestination_ReturnsFalse()
+    public void ValidateEntry_SourceFileDoesNotExist_ReturnsFalse()
     {
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
 
-        var result = app.ValidateMapping(new FileMapping
-        {
-            Source = Path.Combine(_tempDir, "src.txt"),
-            Destination = ""
-        });
+        var result = app.ValidateEntry(new UpdateEntry { Source = Path.Combine(_tempDir, "ghost.txt") });
 
         Assert.False(result);
     }
 
     [Fact]
-    public void ValidateMapping_SourceFileDoesNotExist_ReturnsFalse()
+    public void ValidateEntry_MissingSource_WritesWarningToConsole()
     {
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
 
-        var result = app.ValidateMapping(new FileMapping
-        {
-            Source = Path.Combine(_tempDir, "ghost.txt"),
-            Destination = Path.Combine(_tempDir, "out.txt")
-        });
+        app.ValidateEntry(new UpdateEntry { Source = "", Description = "my entry" });
 
-        Assert.False(result);
+        Assert.Contains("my entry", _out.ToString());
     }
 
     [Fact]
-    public void ValidateMapping_MissingSource_WritesWarningToConsole()
+    public void ValidateEntry_NoCopyToRequired_ValidWithSourceOnly()
     {
+        // copyTo is optional — a command-only entry is valid as long as source exists.
+        var sourceFile = WriteTempFile("cmd-only.txt");
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
 
-        app.ValidateMapping(new FileMapping { Source = "", Destination = "dst.txt", Description = "my mapping" });
+        var result = app.ValidateEntry(new UpdateEntry { Source = sourceFile, Command = "echo hi" });
 
-        Assert.Contains("my mapping", _out.ToString());
+        Assert.True(result);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -262,14 +240,14 @@ public sealed class FileWatcherAppTests : IDisposable
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task SetupWatchers_EnabledValidMapping_CreatesOneWatcher()
+    public async Task SetupWatchers_EnabledValidEntry_CreatesOneWatcher()
     {
         var src = WriteTempFile("watched.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "watched.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "watched.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -283,14 +261,14 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public async Task SetupWatchers_DisabledMapping_CreatesNoWatchers()
+    public async Task SetupWatchers_DisabledEntry_CreatesNoWatchers()
     {
         var src = WriteTempFile("disabled.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "disabled.txt"), Enabled = false }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "disabled.txt"), Enabled = false }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -304,16 +282,19 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public async Task SetupWatchers_TwoMappingsInSameDirectory_CreatesOneWatcher()
+    public async Task SetupWatchers_TwoEntriesInSameDirectory_CreatesOneWatcher()
     {
         var src1 = WriteTempFile("file1.txt");
         var src2 = WriteTempFile("file2.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src1, Destination = Path.Combine(_tempDir, "out", "file1.txt"), Enabled = true },
-                new() { Source = src2, Destination = Path.Combine(_tempDir, "out", "file2.txt"), Enabled = true }
+                OnUpdate =
+                [
+                    new() { Source = src1, CopyTo = Path.Combine(_tempDir, "out", "file1.txt"), Enabled = true },
+                    new() { Source = src2, CopyTo = Path.Combine(_tempDir, "out", "file2.txt"), Enabled = true }
+                ]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -332,9 +313,9 @@ public sealed class FileWatcherAppTests : IDisposable
         var src = WriteTempFile("a.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "a.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "a.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -349,19 +330,15 @@ public sealed class FileWatcherAppTests : IDisposable
         app.Dispose();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // HandleFileChange
-    // ──────────────────────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task HandleFileChange_NonChangedEventType_DoesNotScheduleCopy()
+    public async Task SetupWatchers_CommandOnlyEntry_NoCopyTo_StillCreatesWatcher()
     {
-        var src = WriteTempFile("src.txt");
+        var src = WriteTempFile("cmd-only.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, Command = "echo changed", Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -370,21 +347,46 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(cts.Token);
         app.SetupWatchers();
 
-        app.HandleFileChange(new System.IO.FileSystemEventArgs(System.IO.WatcherChangeTypes.Deleted, _tempDir, "src.txt"));
-
-        Assert.Empty(app.PendingCopyTokens);
+        Assert.Single(app.DirectoryWatchers);
         app.Dispose();
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // HandleFileChange
+    // ──────────────────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task HandleFileChange_EventFromUnwatchedDirectory_DoesNotScheduleCopy()
+    public async Task HandleFileChange_NonChangedEventType_DoesNotScheduleActions()
     {
         var src = WriteTempFile("src.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }]
+            }
+        };
+        var app = CreateApp(WriteConfigFile(config));
+
+        using var cts = Timeout5s();
+        await app.LoadConfigurationAsync(cts.Token);
+        app.SetupWatchers();
+
+        app.HandleFileChange(new FileSystemEventArgs(WatcherChangeTypes.Deleted, _tempDir, "src.txt"));
+
+        Assert.Empty(app.PendingTokens);
+        app.Dispose();
+    }
+
+    [Fact]
+    public async Task HandleFileChange_EventFromUnwatchedDirectory_DoesNotScheduleActions()
+    {
+        var src = WriteTempFile("src.txt");
+        var config = new WatchConfig
+        {
+            Hooks = new WatchHooks
+            {
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -394,21 +396,21 @@ public sealed class FileWatcherAppTests : IDisposable
         app.SetupWatchers();
 
         var differentDir = Path.Combine(Path.GetTempPath(), $"other_{Guid.NewGuid():N}");
-        app.HandleFileChange(new System.IO.FileSystemEventArgs(System.IO.WatcherChangeTypes.Changed, differentDir, "src.txt"));
+        app.HandleFileChange(new FileSystemEventArgs(WatcherChangeTypes.Changed, differentDir, "src.txt"));
 
-        Assert.Empty(app.PendingCopyTokens);
+        Assert.Empty(app.PendingTokens);
         app.Dispose();
     }
 
     [Fact]
-    public async Task HandleFileChange_EventForUnmappedFile_DoesNotScheduleCopy()
+    public async Task HandleFileChange_EventForUnwatchedFile_DoesNotScheduleActions()
     {
         var src = WriteTempFile("src.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "src.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -417,13 +419,11 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(cts.Token);
         app.SetupWatchers();
 
-        // Wait for the initial copies (triggered during TriggerInitialCopies) to drain.
-        await Task.Delay(100);
+        await Task.Delay(100); // let initial copies drain
 
-        // A Changed event for a file in the right directory but NOT in any mapping.
-        app.HandleFileChange(new System.IO.FileSystemEventArgs(System.IO.WatcherChangeTypes.Changed, _tempDir, "totally-different.txt"));
+        app.HandleFileChange(new FileSystemEventArgs(WatcherChangeTypes.Changed, _tempDir, "totally-different.txt"));
 
-        Assert.Empty(app.PendingCopyTokens);
+        Assert.Empty(app.PendingTokens);
         app.Dispose();
     }
 
@@ -440,7 +440,7 @@ public sealed class FileWatcherAppTests : IDisposable
         app.Config = new WatchConfig { Settings = new WatchSettings { CreateBackups = false } };
 
         using var cts = Timeout5s();
-        await app.CopyFileWithRetryAsync(new FileMapping { Source = src, Destination = dst }, cts.Token);
+        await app.CopyFileWithRetryAsync(src, dst, cts.Token);
 
         Assert.True(File.Exists(dst));
         Assert.Equal("hello world", File.ReadAllText(dst));
@@ -455,7 +455,7 @@ public sealed class FileWatcherAppTests : IDisposable
         app.Config = new WatchConfig { Settings = new WatchSettings { CreateBackups = false } };
 
         using var cts = Timeout5s();
-        await app.CopyFileWithRetryAsync(new FileMapping { Source = src, Destination = dst }, cts.Token);
+        await app.CopyFileWithRetryAsync(src, dst, cts.Token);
 
         Assert.True(File.Exists(dst));
     }
@@ -472,7 +472,7 @@ public sealed class FileWatcherAppTests : IDisposable
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => app.CopyFileWithRetryAsync(new FileMapping { Source = src, Destination = dst }, cts.Token));
+            () => app.CopyFileWithRetryAsync(src, dst, cts.Token));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -518,37 +518,37 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // ScheduleCopy / StartCopyWorkflowAsync / TriggerInitialCopies
+    // ScheduleActions / TriggerInitialCopies
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ScheduleCopy_ImmediateMode_CopiesFileWithoutDelay()
+    public async Task ScheduleActions_ImmediateMode_CopiesFileWithoutDelay()
     {
         var src = WriteTempFile("sched.txt", "scheduled");
         var dst = Path.Combine(_tempDir, "out", "sched.txt");
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false } };
 
-        app.ScheduleCopy(new FileMapping { Source = src, Destination = dst }, immediate: true);
+        app.ScheduleActions(new UpdateEntry { Source = src, CopyTo = dst }, immediate: true);
 
-        await Task.Delay(200); // let the fire-and-forget task complete
+        await Task.Delay(200);
 
         Assert.True(File.Exists(dst));
         Assert.Equal("scheduled", File.ReadAllText(dst));
     }
 
     [Fact]
-    public async Task ScheduleCopy_DuplicateDestination_CancelsPreviousAndSchedulesNew()
+    public async Task ScheduleActions_DuplicateSource_CancelsPreviousAndSchedulesNew()
     {
         var src = WriteTempFile("dup.txt", "latest");
         var dst = Path.Combine(_tempDir, "out", "dup.txt");
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 5000, CreateBackups = false } };
 
-        var mapping = new FileMapping { Source = src, Destination = dst };
+        var entry = new UpdateEntry { Source = src, CopyTo = dst };
 
-        app.ScheduleCopy(mapping, immediate: false); // long debounce — will be cancelled
-        app.ScheduleCopy(mapping, immediate: true);  // wins immediately
+        app.ScheduleActions(entry, immediate: false); // long debounce — will be cancelled
+        app.ScheduleActions(entry, immediate: true);  // wins immediately
 
         await Task.Delay(200);
 
@@ -556,34 +556,30 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public async Task ScheduleCopy_SourceMissing_WritesErrorToConsole()
+    public async Task ScheduleActions_SourceMissing_WritesErrorToConsole()
     {
         var src = Path.Combine(_tempDir, "ghost.txt"); // does not exist
         var dst = Path.Combine(_tempDir, "out", "ghost.txt");
         var app = CreateApp(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false } };
 
-        app.ScheduleCopy(new FileMapping { Source = src, Destination = dst }, immediate: true);
+        app.ScheduleActions(new UpdateEntry { Source = src, CopyTo = dst }, immediate: true);
 
         await Task.Delay(500);
 
-        Assert.Contains("Error copying", _out.ToString());
+        Assert.Contains("Error processing", _out.ToString());
     }
 
     [Fact]
-    public async Task ScheduleCopy_NonImmediate_RunsUpdateHookAfterCopy()
+    public async Task ScheduleActions_NonImmediate_RunsCommandAfterCopy()
     {
         var src = WriteTempFile("debounced.txt", "content");
         var dst = Path.Combine(_tempDir, "out", "debounced.txt");
         var runner = new FakeProcessRunner();
         var app = new FileWatcherApp(Path.Combine(_tempDir, "cfg.json"), runner);
-        app.Config = new WatchConfig
-        {
-            Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false },
-            Hooks = new WatchHooks { OnUpdate = new HookEvent { Command = "update-cmd" } }
-        };
+        app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false } };
 
-        app.ScheduleCopy(new FileMapping { Source = src, Destination = dst }, immediate: false);
+        app.ScheduleActions(new UpdateEntry { Source = src, CopyTo = dst, Command = "update-cmd" }, immediate: false);
 
         await Task.Delay(500);
 
@@ -593,7 +589,41 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
-    public async Task TriggerInitialCopies_MultipleValidMappings_CopiesAllFiles()
+    public async Task ScheduleActions_ImmediateMode_DoesNotRunCommand()
+    {
+        var src = WriteTempFile("immediate.txt", "content");
+        var dst = Path.Combine(_tempDir, "out", "immediate.txt");
+        var runner = new FakeProcessRunner();
+        var app = new FileWatcherApp(Path.Combine(_tempDir, "cfg.json"), runner);
+        app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false } };
+
+        app.ScheduleActions(new UpdateEntry { Source = src, CopyTo = dst, Command = "should-not-run" }, immediate: true);
+
+        await Task.Delay(300);
+
+        Assert.Empty(runner.Calls);
+    }
+
+    [Fact]
+    public async Task ScheduleActions_CommandOnlyEntry_NoCopyTo_RunsCommandWithoutCopying()
+    {
+        var src = WriteTempFile("cmd-only.txt", "content");
+        var runner = new FakeProcessRunner();
+        var app = new FileWatcherApp(Path.Combine(_tempDir, "cfg.json"), runner);
+        app.Config = new WatchConfig { Settings = new WatchSettings { DebounceMs = 0 } };
+
+        app.ScheduleActions(new UpdateEntry { Source = src, Command = "my-cmd" }, immediate: false);
+
+        await Task.Delay(300);
+
+        Assert.Single(runner.Calls);
+        Assert.Equal("my-cmd", runner.Calls[0].Command);
+        // No destination file created
+        Assert.Empty(Directory.GetFiles(_tempDir, "*.txt").Where(f => f != src));
+    }
+
+    [Fact]
+    public async Task TriggerInitialCopies_OnlyEntriesWithCopyTo_AreCopied()
     {
         var src1 = WriteTempFile("init1.txt", "one");
         var src2 = WriteTempFile("init2.txt", "two");
@@ -602,10 +632,13 @@ public sealed class FileWatcherAppTests : IDisposable
 
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src1, Destination = dst1, Enabled = true },
-                new() { Source = src2, Destination = dst2, Enabled = true }
+                OnUpdate =
+                [
+                    new() { Source = src1, CopyTo = dst1, Enabled = true },
+                    new() { Source = src2, CopyTo = dst2, Enabled = true }
+                ]
             },
             Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false }
         };
@@ -623,6 +656,32 @@ public sealed class FileWatcherAppTests : IDisposable
         app.Dispose();
     }
 
+    [Fact]
+    public async Task TriggerInitialCopies_CommandOnlyEntry_IsNotTriggered()
+    {
+        var src = WriteTempFile("cmd-only.txt", "content");
+        var runner = new FakeProcessRunner();
+        var config = new WatchConfig
+        {
+            Hooks = new WatchHooks
+            {
+                OnUpdate = [new() { Source = src, Command = "should-not-run", Enabled = true }]
+            },
+            Settings = new WatchSettings { DebounceMs = 0 }
+        };
+        var app = new FileWatcherApp(WriteConfigFile(config), runner);
+
+        using var cts = Timeout5s();
+        await app.LoadConfigurationAsync(cts.Token);
+        app.SetupWatchers();
+        app.TriggerInitialCopies(immediate: true);
+
+        await Task.Delay(300);
+
+        Assert.Empty(runner.Calls);
+        app.Dispose();
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // RunHookAsync
     // ──────────────────────────────────────────────────────────────────────────
@@ -633,7 +692,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "   " }, cts.Token);
+        await app.RunHookAsync("   ", "", cts.Token);
 
         Assert.Empty(runner.Calls);
     }
@@ -644,7 +703,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "do-something" }, cts.Token);
+        await app.RunHookAsync("do-something", "", cts.Token);
 
         Assert.Single(runner.Calls);
         Assert.Equal("do-something", runner.Calls[0].Command);
@@ -658,7 +717,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "pwd", Location = hookDir }, cts.Token);
+        await app.RunHookAsync("pwd", hookDir, cts.Token);
 
         Assert.Equal(hookDir, runner.Calls[0].WorkingDirectory);
     }
@@ -669,7 +728,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "pwd" }, cts.Token);
+        await app.RunHookAsync("pwd", "", cts.Token);
 
         Assert.Equal(Environment.CurrentDirectory, runner.Calls[0].WorkingDirectory);
     }
@@ -681,7 +740,7 @@ public sealed class FileWatcherAppTests : IDisposable
         runner.ExitCode = 42;
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "failing-cmd" }, cts.Token);
+        await app.RunHookAsync("failing-cmd", "", cts.Token);
 
         Assert.Contains("Hook exited with code 42", _out.ToString());
     }
@@ -693,19 +752,19 @@ public sealed class FileWatcherAppTests : IDisposable
         runner.OutputLine = "hello from hook";
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "cmd" }, cts.Token);
+        await app.RunHookAsync("cmd", "", cts.Token);
 
         Assert.Contains("hello from hook", _out.ToString());
     }
 
     [Fact]
-    public async Task RunHookAsync_ErrorOutputFromRunner_WrittenToConsoleError()
+    public async Task RunHookAsync_ErrorOutputFromRunner_WrittenToConsoleOut()
     {
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
         runner.ErrorLine = "something went wrong";
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "cmd" }, cts.Token);
+        await app.RunHookAsync("cmd", "", cts.Token);
 
         Assert.Contains("something went wrong", _out.ToString());
     }
@@ -717,162 +776,98 @@ public sealed class FileWatcherAppTests : IDisposable
         var app = new FileWatcherApp(Path.Combine(_tempDir, "cfg.json"), throwingRunner);
 
         using var cts = Timeout5s();
-        await app.RunHookAsync(new HookEvent { Command = "boom" }, cts.Token); // must not propagate
+        await app.RunHookAsync("boom", "", cts.Token); // must not propagate
 
         Assert.Contains("Failed to run hook", _out.ToString());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // RunStartupHookAsync
+    // RunStartupHooksAsync
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task RunStartupHookAsync_NoHooksConfigured_DoesNotInvokeRunner()
+    public async Task RunStartupHooksAsync_NoHooksConfigured_DoesNotInvokeRunner()
     {
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig { Hooks = null };
 
         using var cts = Timeout5s();
-        await app.RunStartupHookAsync(cts.Token);
+        await app.RunStartupHooksAsync(cts.Token);
 
         Assert.Empty(runner.Calls);
     }
 
     [Fact]
-    public async Task RunStartupHookAsync_HookConfigured_InvokesRunner()
+    public async Task RunStartupHooksAsync_EmptyOnStartupList_DoesNotInvokeRunner()
+    {
+        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
+        app.Config = new WatchConfig { Hooks = new WatchHooks { OnStartup = [] } };
+
+        using var cts = Timeout5s();
+        await app.RunStartupHooksAsync(cts.Token);
+
+        Assert.Empty(runner.Calls);
+    }
+
+    [Fact]
+    public async Task RunStartupHooksAsync_SingleEntry_InvokesRunnerOnce()
     {
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig
         {
-            Hooks = new WatchHooks { OnStartup = new HookEvent { Command = "start" } }
+            Hooks = new WatchHooks { OnStartup = [new() { Command = "start" }] }
         };
 
         using var cts = Timeout5s();
-        await app.RunStartupHookAsync(cts.Token);
+        await app.RunStartupHooksAsync(cts.Token);
 
         Assert.Single(runner.Calls);
         Assert.Equal("start", runner.Calls[0].Command);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // RunUpdateHookAsync
-    // ──────────────────────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task RunUpdateHookAsync_NoHooksConfigured_DoesNotInvokeRunner()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig { Hooks = null };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "any" }, cts.Token);
-
-        Assert.Empty(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_EmptyCommand_DoesNotInvokeRunner()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig
-        {
-            Hooks = new WatchHooks { OnUpdate = new HookEvent { Command = "" } }
-        };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "any" }, cts.Token);
-
-        Assert.Empty(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_ListenToMatchesMappingId_InvokesRunner()
+    public async Task RunStartupHooksAsync_MultipleEntries_InvokesRunnerForEach()
     {
         var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
         app.Config = new WatchConfig
         {
             Hooks = new WatchHooks
             {
-                OnUpdate = new HookEvent { Command = "update", ListenTo = "my-mapping" }
+                OnStartup =
+                [
+                    new() { Command = "cmd-one" },
+                    new() { Command = "cmd-two" },
+                    new() { Command = "cmd-three" }
+                ]
             }
         };
 
         using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "my-mapping" }, cts.Token);
+        await app.RunStartupHooksAsync(cts.Token);
+
+        Assert.Equal(3, runner.Calls.Count);
+        Assert.Equal("cmd-one", runner.Calls[0].Command);
+        Assert.Equal("cmd-two", runner.Calls[1].Command);
+        Assert.Equal("cmd-three", runner.Calls[2].Command);
+    }
+
+    [Fact]
+    public async Task RunStartupHooksAsync_EntryWithEmptyCommand_IsSkipped()
+    {
+        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
+        app.Config = new WatchConfig
+        {
+            Hooks = new WatchHooks
+            {
+                OnStartup = [new() { Command = "" }, new() { Command = "real-cmd" }]
+            }
+        };
+
+        using var cts = Timeout5s();
+        await app.RunStartupHooksAsync(cts.Token);
 
         Assert.Single(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_ListenToDoesNotMatchMappingId_DoesNotInvokeRunner()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig
-        {
-            Hooks = new WatchHooks
-            {
-                OnUpdate = new HookEvent { Command = "update", ListenTo = "other-mapping" }
-            }
-        };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "my-mapping" }, cts.Token);
-
-        Assert.Empty(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_ListenToSetButMappingHasNoId_DoesNotInvokeRunner()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig
-        {
-            Hooks = new WatchHooks
-            {
-                OnUpdate = new HookEvent { Command = "update", ListenTo = "specific-id" }
-            }
-        };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = null }, cts.Token);
-
-        Assert.Empty(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_NoListenToFilter_InvokesRunnerForAnyMapping()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig
-        {
-            Hooks = new WatchHooks
-            {
-                OnUpdate = new HookEvent { Command = "update", ListenTo = null }
-            }
-        };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "anything" }, cts.Token);
-
-        Assert.Single(runner.Calls);
-    }
-
-    [Fact]
-    public async Task RunUpdateHookAsync_ListenToMatchIsCaseInsensitive()
-    {
-        var (app, runner) = CreateAppWithRunner(Path.Combine(_tempDir, "cfg.json"));
-        app.Config = new WatchConfig
-        {
-            Hooks = new WatchHooks
-            {
-                OnUpdate = new HookEvent { Command = "update", ListenTo = "My-Mapping" }
-            }
-        };
-
-        using var cts = Timeout5s();
-        await app.RunUpdateHookAsync(new FileMapping { Id = "MY-MAPPING" }, cts.Token);
-
-        Assert.Single(runner.Calls);
+        Assert.Equal("real-cmd", runner.Calls[0].Command);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -880,14 +875,14 @@ public sealed class FileWatcherAppTests : IDisposable
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ShowStatus_AfterSetup_PrintsWatcherAndMappingCounts()
+    public async Task ShowStatus_AfterSetup_PrintsWatcherAndEntryCounts()
     {
         var src = WriteTempFile("status.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "status.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "status.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -896,13 +891,13 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(cts.Token);
         app.SetupWatchers();
 
-        await Task.Delay(100); // let pending copies drain
+        await Task.Delay(100); // let pending actions drain
 
         app.ShowStatus();
 
         Assert.Contains("Active watchers: 1", _out.ToString());
-        Assert.Contains("Enabled mappings: 1", _out.ToString());
-        Assert.Contains("Pending copies:", _out.ToString());
+        Assert.Contains("Active entries: 1", _out.ToString());
+        Assert.Contains("Pending actions:", _out.ToString());
         app.Dispose();
     }
 
@@ -911,14 +906,14 @@ public sealed class FileWatcherAppTests : IDisposable
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task PrintWelcome_AfterSetup_PrintsMappingCountAndKeyHints()
+    public async Task PrintWelcome_AfterSetup_PrintsEntryCountAndKeyHints()
     {
         var src = WriteTempFile("welcome.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "welcome.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "welcome.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -931,7 +926,7 @@ public sealed class FileWatcherAppTests : IDisposable
 
         var output = _out.ToString();
         Assert.Contains("Monitoring", output);
-        Assert.Contains("enabled mapping(s)", output);
+        Assert.Contains("enabled entry(ies)", output);
         Assert.Contains("reload config", output);
         app.Dispose();
     }
@@ -946,10 +941,10 @@ public sealed class FileWatcherAppTests : IDisposable
         var src = Path.Combine(_tempDir, "src", "test.txt");
         var dst = Path.Combine(_tempDir, "dst", "test.txt");
 
-        FileWatcherApp.WriteCopySummary(new FileMapping
+        FileWatcherApp.WriteCopySummary(new UpdateEntry
         {
             Source = src,
-            Destination = dst,
+            CopyTo = dst,
             Description = "My test file"
         });
 
@@ -966,10 +961,10 @@ public sealed class FileWatcherAppTests : IDisposable
         var src = Path.Combine(_tempDir, "src", "nodesc.txt");
         var dst = Path.Combine(_tempDir, "dst", "nodesc.txt");
 
-        FileWatcherApp.WriteCopySummary(new FileMapping
+        FileWatcherApp.WriteCopySummary(new UpdateEntry
         {
             Source = src,
-            Destination = dst,
+            CopyTo = dst,
             Description = ""
         });
 
@@ -988,9 +983,9 @@ public sealed class FileWatcherAppTests : IDisposable
         var src = WriteTempFile("reload.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "reload.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "reload.txt"), Enabled = true }]
             },
             Settings = new WatchSettings { DebounceMs = 0 }
         };
@@ -1034,14 +1029,14 @@ public sealed class FileWatcherAppTests : IDisposable
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Dispose_ReleasesWatchersAndClearsPendingCopies()
+    public async Task Dispose_ReleasesWatchersAndClearsPendingActions()
     {
         var src = WriteTempFile("dispose.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "dispose.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "dispose.txt"), Enabled = true }]
             }
         };
         var app = CreateApp(WriteConfigFile(config));
@@ -1053,7 +1048,7 @@ public sealed class FileWatcherAppTests : IDisposable
         app.Dispose();
 
         Assert.Empty(app.DirectoryWatchers);
-        Assert.Empty(app.PendingCopyTokens);
+        Assert.Empty(app.PendingTokens);
     }
 
     [Fact]
@@ -1075,23 +1070,20 @@ public sealed class FileWatcherAppTests : IDisposable
         var src = WriteTempFile("run.txt");
         var config = new WatchConfig
         {
-            Mappings = new List<FileMapping>
+            Hooks = new WatchHooks
             {
-                new() { Source = src, Destination = Path.Combine(_tempDir, "out", "run.txt"), Enabled = true }
+                OnUpdate = [new() { Source = src, CopyTo = Path.Combine(_tempDir, "out", "run.txt"), Enabled = true }]
             },
             Settings = new WatchSettings { DebounceMs = 0, CreateBackups = false }
         };
         var app = CreateApp(WriteConfigFile(config));
 
-        // Cancel after a short delay. Console.KeyAvailable throws InvalidOperationException
-        // in non-interactive test environments, which is also an acceptable exit.
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
         try { await app.RunAsync(cts.Token); }
         catch (OperationCanceledException) { /* clean shutdown */ }
         catch (InvalidOperationException) { /* Console.KeyAvailable not available in CI */ }
 
-        // Welcome message must have been written before the console loop was entered.
         Assert.Contains("Monitoring", _out.ToString());
         app.Dispose();
     }

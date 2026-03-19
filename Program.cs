@@ -55,7 +55,6 @@ internal sealed class ShellProcessRunner : IProcessRunner
     }
 }
 // Coordinates configuration loading, watcher lifecycle, and the console UI loop.
-// Encapsulates the long-running watcher workflow so Program.cs stays thin and testable.
 internal sealed class FileWatcherApp(string configPath, IProcessRunner? processRunner = null) : IDisposable
 {
     // 75 ms gives ~13 polls/s — responsive enough for key input without busy-waiting.
@@ -68,15 +67,15 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     private static readonly JsonSerializerOptions SerializerOptionsIndented = CreateSerializerOptions(writeIndented: true);
     private readonly string _configPath = configPath;
     private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingCopyTokens = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FileSystemWatcher> _directoryWatchers = new(StringComparer.OrdinalIgnoreCase);
-    private ConcurrentDictionary<string, IReadOnlyList<FileMapping>> _directoryMappings = new(StringComparer.OrdinalIgnoreCase);
+    private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(StringComparer.OrdinalIgnoreCase);
     private WatchConfig _config = new();
     private bool _disposed;
     // Internal observable state — used by tests without reflection.
     internal WatchConfig Config { get => _config; set => _config = value; }
     internal ConcurrentDictionary<string, FileSystemWatcher> DirectoryWatchers => _directoryWatchers;
-    internal ConcurrentDictionary<string, CancellationTokenSource> PendingCopyTokens => _pendingCopyTokens;
+    internal ConcurrentDictionary<string, CancellationTokenSource> PendingTokens => _pendingTokens;
     // Entry point used by Program. Handles the happy-path lifecycle.
     public async Task RunAsync(CancellationToken token)
     {
@@ -84,8 +83,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         await LoadConfigurationAsync(token);
         SetupWatchers();
         TriggerInitialCopies(immediate: true);
-        await RunStartupHookAsync(token);
-        // Start web dashboard
+        await RunStartupHooksAsync(token);
         var port = _config.Settings.DashboardPort > 0 ? _config.Settings.DashboardPort : DefaultDashboardPort;
         _ = LogWebServer.StartAsync(port, token);
         PrintWelcome(port);
@@ -118,7 +116,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             await LoadConfigurationAsync(token);
             SetupWatchers();
             TriggerInitialCopies(immediate: true);
-            await RunStartupHookAsync(token);
+            await RunStartupHooksAsync(token);
             WriteSuccess("Configuration reloaded.");
         }
         catch (Exception ex)
@@ -131,9 +129,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         while (!token.IsCancellationRequested)
         {
             if (Console.KeyAvailable)
-            {
                 return Console.ReadKey(true);
-            }
             await Task.Delay(KeyPollInterval, token);
         }
         throw new OperationCanceledException(token);
@@ -149,10 +145,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     // Guarantees there is a config on disk by seeding a sample if needed.
     internal async Task EnsureConfigurationExistsAsync(CancellationToken token)
     {
-        if (File.Exists(_configPath))
-        {
-            return;
-        }
+        if (File.Exists(_configPath)) return;
         var sample = JsonSerializer.Serialize(WatchConfig.CreateSample(), SerializerOptionsIndented);
         await File.WriteAllTextAsync(_configPath, sample, token);
         throw new FileNotFoundException($"Created sample config '{_configPath}'. Please customize it and run again.");
@@ -165,9 +158,9 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             await using var stream = File.OpenRead(_configPath);
             _config = await JsonSerializer.DeserializeAsync<WatchConfig>(stream, SerializerOptions, token)
                 ?? throw new InvalidOperationException("Configuration file is empty or malformed.");
-            _config.Mappings ??= new List<FileMapping>();
             _config.Settings ??= new WatchSettings();
-            WriteInfo($"Loaded {_config.Mappings.Count} mapping(s) from {_configPath}.");
+            _config.Hooks ??= new WatchHooks();
+            WriteInfo($"Loaded {_config.Hooks.OnUpdate.Count} onUpdate entry(ies) from {_configPath}.");
         }
         catch (JsonException ex)
         {
@@ -178,44 +171,39 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     internal void SetupWatchers()
     {
         DisposeWatchers();
-        var groupedMappings = new Dictionary<string, List<FileMapping>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var mapping in _config.Mappings.Where(m => m.Enabled))
+        var grouped = new Dictionary<string, List<UpdateEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in (_config.Hooks?.OnUpdate ?? []).Where(e => e.Enabled))
         {
-            if (!ValidateMapping(mapping))
+            if (!ValidateEntry(entry)) continue;
+            var directory = Path.GetDirectoryName(entry.Source)!;
+            if (!grouped.TryGetValue(directory, out var list))
             {
-                continue;
+                list = [];
+                grouped[directory] = list;
             }
-            var directory = Path.GetDirectoryName(mapping.Source)!;
-            if (!groupedMappings.TryGetValue(directory, out var list))
-            {
-                list = new List<FileMapping>();
-                groupedMappings[directory] = list;
-            }
-            list.Add(mapping);
+            list.Add(entry);
             _directoryWatchers.GetOrAdd(directory, CreateWatcher);
         }
-        var latestMappings = new ConcurrentDictionary<string, IReadOnlyList<FileMapping>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in groupedMappings)
-        {
-            latestMappings[pair.Key] = pair.Value.AsReadOnly();
-        }
-        _directoryMappings = latestMappings;
+        var latest = new ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in grouped)
+            latest[pair.Key] = pair.Value.AsReadOnly();
+        _directoryEntries = latest;
     }
-    internal bool ValidateMapping(FileMapping mapping)
+    internal bool ValidateEntry(UpdateEntry entry)
     {
-        if (string.IsNullOrWhiteSpace(mapping.Source) || string.IsNullOrWhiteSpace(mapping.Destination))
+        if (string.IsNullOrWhiteSpace(entry.Source))
         {
-            WriteWarning($"Mapping skipped: Source or destination missing ({mapping.Description}).");
+            WriteWarning($"Entry skipped: source is missing ({entry.Description}).");
             return false;
         }
-        if (!File.Exists(mapping.Source))
+        if (!File.Exists(entry.Source))
         {
-            WriteWarning($"Source file not found: {mapping.Source}");
+            WriteWarning($"Source file not found: {entry.Source}");
             return false;
         }
-        if (Path.GetDirectoryName(mapping.Source) is null)
+        if (Path.GetDirectoryName(entry.Source) is null)
         {
-            WriteWarning($"Unable to determine directory for source: {mapping.Source}");
+            WriteWarning($"Unable to determine directory for source: {entry.Source}");
             return false;
         }
         return true;
@@ -233,44 +221,35 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         WriteInfo($"Watching {directory}");
         return watcher;
     }
-    // Filters raw file system events down to the mapping that needs copying.
+    // Filters raw file system events to the matching entry.
     internal void HandleFileChange(FileSystemEventArgs args)
     {
-        if (args.ChangeType != WatcherChangeTypes.Changed)
-        {
-            return;
-        }
+        if (args.ChangeType != WatcherChangeTypes.Changed) return;
         var directory = Path.GetDirectoryName(args.FullPath);
         if (directory is null)
         {
             WriteWarning($"Unable to determine directory for path: {args.FullPath}");
             return;
         }
-        if (!_directoryMappings.TryGetValue(directory, out var mappings))
-        {
-            return;
-        }
-        var mapping = mappings.FirstOrDefault(m => string.Equals(m.Source, args.FullPath, StringComparison.OrdinalIgnoreCase));
-        if (mapping is null)
-        {
-            return;
-        }
-        ScheduleCopy(mapping);
+        if (!_directoryEntries.TryGetValue(directory, out var entries)) return;
+        var entry = entries.FirstOrDefault(e => string.Equals(e.Source, args.FullPath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return;
+        ScheduleActions(entry);
     }
-    // Ensures there is at most one pending copy per destination, with optional debounce.
-    internal void ScheduleCopy(FileMapping mapping, bool immediate = false)
+    // Ensures at most one pending action per source, with optional debounce.
+    internal void ScheduleActions(UpdateEntry entry, bool immediate = false)
     {
         var tokenSource = new CancellationTokenSource();
-        if (_pendingCopyTokens.TryGetValue(mapping.Destination, out var existing))
+        if (_pendingTokens.TryGetValue(entry.Source, out var existing))
         {
             existing.Cancel();
             existing.Dispose();
         }
-        _pendingCopyTokens[mapping.Destination] = tokenSource;
-        _ = StartCopyWorkflowAsync(mapping, tokenSource, immediate);
+        _pendingTokens[entry.Source] = tokenSource;
+        _ = StartActionsWorkflowAsync(entry, tokenSource, immediate);
     }
-    // Handles the debounce wait, retries, and logging for a single copy operation.
-    private async Task StartCopyWorkflowAsync(FileMapping mapping, CancellationTokenSource cts, bool immediate)
+    // Handles debounce, copy, and command execution for a single entry.
+    private async Task StartActionsWorkflowAsync(UpdateEntry entry, CancellationTokenSource cts, bool immediate)
     {
         try
         {
@@ -279,41 +258,43 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                 var delay = Math.Max(0, _config.Settings.DebounceMs);
                 await Task.Delay(delay, cts.Token);
             }
-            await CopyFileWithRetryAsync(mapping, cts.Token);
-            WriteCopySummary(mapping);
-            if (!immediate)
+            if (entry.CopyTo != null)
             {
-                await RunUpdateHookAsync(mapping, cts.Token);
+                await CopyFileWithRetryAsync(entry.Source, entry.CopyTo, cts.Token);
+                WriteCopySummary(entry);
+            }
+            if (!immediate && !string.IsNullOrWhiteSpace(entry.Command))
+            {
+                WriteInfo($"Executing onUpdate command for '{entry.Source}'...");
+                await RunHookAsync(entry.Command, entry.Location, cts.Token);
             }
         }
         catch (OperationCanceledException)
         {
-            // Expected when a newer change cancels this copy.
+            // Expected when a newer change cancels this action.
         }
         catch (Exception ex)
         {
-            WriteError($"Error copying {mapping.Source}: {ex.Message}");
+            WriteError($"Error processing {entry.Source}: {ex.Message}");
         }
         finally
         {
-            _pendingCopyTokens.TryRemove(mapping.Destination, out _);
+            _pendingTokens.TryRemove(entry.Source, out _);
             cts.Dispose();
         }
     }
-    internal async Task CopyFileWithRetryAsync(FileMapping mapping, CancellationToken token, int maxRetries = 3)
+    internal async Task CopyFileWithRetryAsync(string source, string destination, CancellationToken token, int maxRetries = 3)
     {
-        var destinationDirectory = Path.GetDirectoryName(mapping.Destination);
-        if (!string.IsNullOrEmpty(destinationDirectory))
-        {
-            Directory.CreateDirectory(destinationDirectory);
-        }
+        var destDir = Path.GetDirectoryName(destination);
+        if (!string.IsNullOrEmpty(destDir))
+            Directory.CreateDirectory(destDir);
         for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
             token.ThrowIfCancellationRequested();
             try
             {
-                CreateBackupIfNeeded(mapping.Destination);
-                File.Copy(mapping.Source, mapping.Destination, overwrite: true);
+                CreateBackupIfNeeded(destination);
+                File.Copy(source, destination, overwrite: true);
                 return;
             }
             catch (IOException) when (attempt < maxRetries)
@@ -325,62 +306,38 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     // Writes a timestamped safety copy if backups are enabled.
     internal void CreateBackupIfNeeded(string destination)
     {
-        if (!_config.Settings.CreateBackups || !File.Exists(destination))
-        {
-            return;
-        }
-        var backupFile = $"{destination}.backup.{DateTime.Now:yyyyMMdd-HHmmss}";
-        File.Copy(destination, backupFile, overwrite: true);
+        if (!_config.Settings.CreateBackups || !File.Exists(destination)) return;
+        File.Copy(destination, $"{destination}.backup.{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: true);
     }
-    // Primes every mapping so destinations are up-to-date even before the first change event.
+    // Primes every entry that has a copyTo so destinations are up-to-date before the first change event.
     internal void TriggerInitialCopies(bool immediate)
     {
-        foreach (var mapping in _directoryMappings.Values.SelectMany(list => list))
-        {
-            ScheduleCopy(mapping, immediate);
-        }
+        foreach (var entry in _directoryEntries.Values.SelectMany(list => list).Where(e => e.CopyTo != null))
+            ScheduleActions(entry, immediate);
     }
-    internal async Task RunStartupHookAsync(CancellationToken token)
+    internal async Task RunStartupHooksAsync(CancellationToken token)
     {
-        var hook = _config.Hooks?.OnStartup;
-        if (hook != null)
+        foreach (var entry in _config.Hooks?.OnStartup ?? [])
         {
+            if (string.IsNullOrWhiteSpace(entry.Command)) continue;
             WriteInfo("Executing onStartup hook...");
-            await RunHookAsync(hook, token);
+            await RunHookAsync(entry.Command, entry.Location, token);
         }
     }
-    internal async Task RunUpdateHookAsync(FileMapping mapping, CancellationToken token)
+    internal async Task RunHookAsync(string command, string location, CancellationToken token)
     {
-        var hook = _config.Hooks?.OnUpdate;
-        if (hook == null || string.IsNullOrWhiteSpace(hook.Command)) return;
-        if (!string.IsNullOrEmpty(hook.ListenTo))
-        {
-            if (string.IsNullOrEmpty(mapping.Id) || !string.Equals(hook.ListenTo, mapping.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-        }
-        WriteInfo($"Executing onUpdate hook for mapping '{mapping.Source}'...");
-        await RunHookAsync(hook, token);
-    }
-    internal async Task RunHookAsync(HookEvent hook, CancellationToken token)
-    {
-        if (string.IsNullOrWhiteSpace(hook.Command)) return;
+        if (string.IsNullOrWhiteSpace(command)) return;
         try
         {
-            var workingDirectory = string.IsNullOrWhiteSpace(hook.Location)
-                ? Environment.CurrentDirectory
-                : hook.Location;
+            var workingDirectory = string.IsNullOrWhiteSpace(location) ? Environment.CurrentDirectory : location;
             var exitCode = await _processRunner.RunAsync(
-                hook.Command,
+                command,
                 workingDirectory,
                 line => LogService.Log(LogLevel.Info, $"[Hook] {line}"),
                 line => LogService.Log(LogLevel.Error, $"[Hook Error] {line}"),
                 token);
             if (exitCode != 0)
-            {
                 WriteWarning($"Hook exited with code {exitCode}");
-            }
         }
         catch (OperationCanceledException)
         {
@@ -395,33 +352,29 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     {
         LogService.Log(LogLevel.Info, $"\n=== Status at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
         LogService.Log(LogLevel.Info, $"Active watchers: {_directoryWatchers.Count}");
-        LogService.Log(LogLevel.Info, $"Enabled mappings: {_directoryMappings.Values.Sum(list => list.Count)}");
-        LogService.Log(LogLevel.Info, $"Pending copies: {_pendingCopyTokens.Count}");
-        if (_pendingCopyTokens.Count > 0)
+        LogService.Log(LogLevel.Info, $"Active entries: {_directoryEntries.Values.Sum(list => list.Count)}");
+        LogService.Log(LogLevel.Info, $"Pending actions: {_pendingTokens.Count}");
+        if (_pendingTokens.Count > 0)
         {
-            LogService.Log(LogLevel.Info, "Pending destinations:");
-            foreach (var destination in _pendingCopyTokens.Keys)
-            {
-                LogService.Log(LogLevel.Info, $"  - {destination}");
-            }
+            LogService.Log(LogLevel.Info, "Pending sources:");
+            foreach (var src in _pendingTokens.Keys)
+                LogService.Log(LogLevel.Info, $"  - {src}");
         }
     }
     internal void PrintWelcome(int port)
     {
         LogService.Log(LogLevel.Info, "");
-        LogService.Log(LogLevel.Success, $"Monitoring {_directoryMappings.Values.Sum(list => list.Count)} enabled mapping(s).");
+        LogService.Log(LogLevel.Success, $"Monitoring {_directoryEntries.Values.Sum(list => list.Count)} enabled entry(ies).");
         LogService.Log(LogLevel.Info, $"Dashboard available at http://localhost:{port}");
         LogService.Log(LogLevel.Info, "Press 'r' to reload config, 'q' to quit, any other key for status.");
     }
-    internal static void WriteCopySummary(FileMapping mapping)
+    internal static void WriteCopySummary(UpdateEntry entry)
     {
-        LogService.Log(LogLevel.Copy, $"✓ Copied {Path.GetFileName(mapping.Source)} at {DateTime.Now:HH:mm:ss}");
-        if (!string.IsNullOrWhiteSpace(mapping.Description))
-        {
-            LogService.Log(LogLevel.Info, $"  Description: {mapping.Description}");
-        }
-        LogService.Log(LogLevel.Info, $"  From: {mapping.Source}");
-        LogService.Log(LogLevel.Info, $"  To:   {mapping.Destination}");
+        LogService.Log(LogLevel.Copy, $"✓ Copied {Path.GetFileName(entry.Source)} at {DateTime.Now:HH:mm:ss}");
+        if (!string.IsNullOrWhiteSpace(entry.Description))
+            LogService.Log(LogLevel.Info, $"  Description: {entry.Description}");
+        LogService.Log(LogLevel.Info, $"  From: {entry.Source}");
+        LogService.Log(LogLevel.Info, $"  To:   {entry.CopyTo}");
     }
     private static void WriteWarning(string message) => LogService.Log(LogLevel.Warning, message);
     private static void WriteError(string message) => LogService.Log(LogLevel.Error, message);
@@ -430,69 +383,51 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     private void DisposeWatchers()
     {
         foreach (var watcher in _directoryWatchers.Values)
-        {
             watcher.Dispose();
-        }
         _directoryWatchers.Clear();
     }
-    private void CancelPendingCopies()
+    private void CancelPendingActions()
     {
-        foreach (var tokenSource in _pendingCopyTokens.Values)
+        foreach (var tokenSource in _pendingTokens.Values)
         {
             tokenSource.Cancel();
             tokenSource.Dispose();
         }
-        _pendingCopyTokens.Clear();
+        _pendingTokens.Clear();
     }
     public void Dispose()
     {
         if (_disposed) return;
-        // Cancel in-flight copies before disposing watchers so that any running
-        // CopyFileWithRetryAsync tasks receive the cancellation signal and exit
-        // cleanly rather than racing against a disposed FileSystemWatcher.
-        CancelPendingCopies();
+        CancelPendingActions();
         DisposeWatchers();
         _disposed = true;
-        GC.SuppressFinalize(this); // No finalizer — tells the GC to skip the finalizer queue.
+        GC.SuppressFinalize(this);
     }
 }
 
 /// <summary>Root configuration object deserialised from <c>watchconfig.json</c>.</summary>
 public sealed record WatchConfig
 {
-    /// <summary>Source → destination file mappings to watch and sync.</summary>
-    public List<FileMapping> Mappings { get; set; } = [];
     /// <summary>Global settings such as debounce delay and dashboard port.</summary>
     public WatchSettings Settings { get; set; } = new();
-    /// <summary>Optional lifecycle hooks executed on startup or file update.</summary>
+    /// <summary>Lifecycle hooks: arrays of startup commands and per-file update entries.</summary>
     public WatchHooks? Hooks { get; set; }
     /// <summary>Returns a minimal sample configuration suitable for first-run seeding.</summary>
     public static WatchConfig CreateSample() => new()
     {
         Settings = new() { DebounceMs = 1000, DashboardPort = 5000 },
-        Mappings = [new() { Source = "src/file.js", Destination = "out/file.js", Description = "App script" }]
+        Hooks = new()
+        {
+            OnStartup = [new() { Command = "echo started" }],
+            OnUpdate = [new() { Source = "src/file.js", CopyTo = "out/file.js", Command = "echo updated", Description = "App script" }]
+        }
     };
-}
-
-/// <summary>Describes a single source → destination file sync pair.</summary>
-public sealed record FileMapping
-{
-    /// <summary>Optional unique identifier used to bind hooks to a specific mapping.</summary>
-    public string? Id { get; set; }
-    /// <summary>Absolute or relative path to the source file.</summary>
-    public string Source { get; set; } = "";
-    /// <summary>Absolute or relative path to the destination file.</summary>
-    public string Destination { get; set; } = "";
-    /// <summary>When <c>false</c> the mapping is skipped entirely.</summary>
-    public bool Enabled { get; set; } = true;
-    /// <summary>Human-readable description shown in copy summaries and warnings.</summary>
-    public string Description { get; set; } = "";
 }
 
 /// <summary>Global application settings read from the <c>settings</c> object in the config file.</summary>
 public sealed record WatchSettings
 {
-    /// <summary>Milliseconds to wait after a file change before copying, to coalesce rapid saves.</summary>
+    /// <summary>Milliseconds to wait after a file change before acting, to coalesce rapid saves.</summary>
     public int DebounceMs { get; set; } = 1000;
     /// <summary>When <c>true</c>, a timestamped backup of the destination is created before each overwrite.</summary>
     public bool CreateBackups { get; set; } = false;
@@ -502,29 +437,40 @@ public sealed record WatchSettings
     public int DashboardPort { get; set; } = 5000;
 }
 
-/// <summary>Container for the optional lifecycle hook commands.</summary>
+/// <summary>Container for lifecycle hook arrays.</summary>
 public sealed record WatchHooks
 {
-    /// <summary>Hook executed once when the application starts (or after a config reload).</summary>
-    public HookEvent? OnStartup { get; set; }
-    /// <summary>Hook executed after each successful file copy.</summary>
-    public HookEvent? OnUpdate { get; set; }
+    /// <summary>Commands executed once when the application starts (or after a config reload).</summary>
+    public List<StartupEntry> OnStartup { get; set; } = [];
+    /// <summary>Entries executed after each debounced file change.</summary>
+    public List<UpdateEntry> OnUpdate { get; set; } = [];
+}
+
+/// <summary>A command to run on application startup or config reload.</summary>
+public sealed record StartupEntry
+{
+    /// <summary>Shell command to execute.</summary>
+    public string Command { get; set; } = "";
+    /// <summary>Working directory for the command. Empty or whitespace uses the current directory.</summary>
+    public string Location { get; set; } = "";
 }
 
 /// <summary>
-/// A single hook command with an optional working directory and mapping filter.
-/// <para><see cref="Location"/> may be empty or omitted; the process then runs in
-/// <see cref="Environment.CurrentDirectory"/>.</para>
+/// Watches a source file and, on change, optionally copies it to <see cref="CopyTo"/>
+/// and/or executes <see cref="Command"/>. Both actions are opt-in.
 /// </summary>
-public sealed record HookEvent
+public sealed record UpdateEntry
 {
-    /// <summary>Working directory for the command. Empty or whitespace uses the current directory.</summary>
+    /// <summary>Absolute or relative path to the source file to watch.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>When <c>false</c> the entry is skipped entirely.</summary>
+    public bool Enabled { get; set; } = true;
+    /// <summary>Destination path to copy the source file to on change. Omit to skip copying.</summary>
+    public string? CopyTo { get; set; }
+    /// <summary>Shell command to run after a change (and after copying, if applicable). Omit to skip.</summary>
+    public string? Command { get; set; }
+    /// <summary>Working directory for <see cref="Command"/>. Empty or whitespace uses the current directory.</summary>
     public string Location { get; set; } = "";
-    /// <summary>Shell command to execute.</summary>
-    public string Command { get; set; } = "";
-    /// <summary>
-    /// When set, the hook only fires for the mapping whose <see cref="FileMapping.Id"/> matches.
-    /// When <c>null</c> or empty, the hook fires for every mapping update.
-    /// </summary>
-    public string? ListenTo { get; set; }
+    /// <summary>Human-readable description shown in copy summaries and warnings.</summary>
+    public string Description { get; set; } = "";
 }
