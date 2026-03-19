@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace FileWatcher;
 
@@ -13,6 +14,9 @@ public static class LogWebServer
     public static async Task StartAsync(int port, CancellationToken token)
     {
         var b = WebApplication.CreateBuilder();
+        b.Logging.ClearProviders();
+        b.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Error);
+        b.WebHost.SuppressStatusMessages(true);
         b.Services.AddCors();
         b.Services.ConfigureHttpJsonOptions(options =>
         {
@@ -75,6 +79,6 @@ public static class LogWebServer
                 }
             }
         );
-        await HostingAbstractionsHostExtensions.RunAsync(app, token);
+        await app.RunAsync(token);
     }
 }

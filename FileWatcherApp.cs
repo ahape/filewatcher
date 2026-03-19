@@ -1,13 +1,22 @@
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 [assembly: InternalsVisibleTo("FileWatcher.Tests")]
 
 namespace FileWatcher;
 
-internal sealed class FileWatcherApp(string configPath, IProcessRunner? processRunner = null)
-    : IDisposable
+internal sealed class FileWatcherApp(
+    string configPath,
+    IProcessRunner? processRunner = null,
+    IFileSystem? fileSystem = null
+) : IDisposable
 {
     private static readonly TimeSpan KeyPollInterval = TimeSpan.FromMilliseconds(75);
     private const int DefaultDashboardPort = 5002;
@@ -21,10 +30,12 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
 
     private readonly string _configPath = configPath;
     private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
+    private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
+
     internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(
         StringComparer.OrdinalIgnoreCase
     );
-    internal readonly ConcurrentDictionary<string, FileSystemWatcher> _directoryWatchers = new(
+    internal readonly ConcurrentDictionary<string, IFileSystemWatcher> _directoryWatchers = new(
         StringComparer.OrdinalIgnoreCase
     );
     private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
@@ -112,10 +123,10 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
 
     internal async Task LoadConfigurationAsync(CancellationToken token)
     {
-        if (!File.Exists(_configPath))
+        if (!_fs.FileExists(_configPath))
             throw new FileNotFoundException($"Configuration file not found: {_configPath}");
 
-        await using var stream = File.OpenRead(_configPath);
+        await using var stream = _fs.OpenRead(_configPath);
         _config =
             await JsonSerializer.DeserializeAsync<WatchConfig>(stream, SerializerOptions, token)
             ?? throw new InvalidOperationException("Configuration file is empty or malformed.");
@@ -140,7 +151,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                 );
                 continue;
             }
-            if (!File.Exists(entry.Source))
+            if (!_fs.FileExists(entry.Source))
             {
                 LogService.Log(LogLevel.Warning, $"Source file not found: {entry.Source}");
                 continue;
@@ -163,14 +174,14 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         LogDebug($"SetupWatchers completed with {_directoryWatchers.Count} active watchers");
     }
 
-    private FileSystemWatcher CreateWatcher(string directory)
+    private IFileSystemWatcher CreateWatcher(string directory)
     {
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
-        var watcher = new FileSystemWatcher(directory)
-        {
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
-            EnableRaisingEvents = true,
-        };
+        var watcher = _fs.CreateWatcher(
+            directory,
+            NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
+        );
+        watcher.EnableRaisingEvents = true;
         watcher.Changed += (_, e) => HandleFileEvent(e);
         watcher.Created += (_, e) => HandleFileEvent(e);
         watcher.Error += (_, e) =>
@@ -205,11 +216,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
 
         try
         {
-            var fileInfo = new FileInfo(args.FullPath);
-            if (!fileInfo.Exists)
-                return;
-
-            var currentState = (fileInfo.LastWriteTimeUtc, fileInfo.Length);
+            var currentState = _fs.GetFileInfo(args.FullPath);
             if (
                 _fileStates.TryGetValue(args.FullPath, out var previousState)
                 && previousState == currentState
@@ -227,6 +234,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         catch (Exception)
         {
             // Ignore if file is locked; we'll retry or just proceed with scheduling
+            return;
         }
 
         ScheduleActions(entry);
@@ -262,8 +270,8 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                     LogDebug($"Copying {entry.Source} to {entry.CopyTo}");
                     var destDir = Path.GetDirectoryName(entry.CopyTo);
                     if (!string.IsNullOrEmpty(destDir))
-                        Directory.CreateDirectory(destDir);
-                    File.Copy(entry.Source, entry.CopyTo, overwrite: true);
+                        _fs.CreateDirectory(destDir);
+                    _fs.CopyFile(entry.Source, entry.CopyTo, overwrite: true);
                     LogService.Log(
                         LogLevel.Copy,
                         $"Copied {Path.GetFileName(entry.Source)} to {entry.CopyTo}"

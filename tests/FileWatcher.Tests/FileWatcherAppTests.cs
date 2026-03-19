@@ -1,46 +1,43 @@
+using System;
+using System.IO;
 using System.Text.Json;
+using System.Threading.Tasks;
+using Xunit;
 
 namespace FileWatcher.Tests;
 
 public sealed class FileWatcherAppTests : IDisposable
 {
-    private readonly string _tempDir = Path.Combine(
-        Path.GetTempPath(),
-        $"fwtest_{Guid.NewGuid():N}"
-    );
+    private readonly FakeFileSystem _fs = new();
     private readonly StringWriter _out = new();
+    private readonly TextWriter _originalOut;
 
     public FileWatcherAppTests()
     {
-        Directory.CreateDirectory(_tempDir);
+        _originalOut = Console.Out;
         Console.SetOut(_out);
     }
 
     public void Dispose()
     {
-        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-        try
-        {
-            Directory.Delete(_tempDir, true);
-        }
-        catch { }
+        Console.SetOut(_originalOut);
+        _out.Dispose();
     }
 
-    private FileWatcherApp CreateApp(string cfg, FakeProcessRunner? r = null) =>
-        new(cfg, r ?? new FakeProcessRunner());
+    private FileWatcherApp CreateApp(string cfgPath, FakeProcessRunner? r = null) =>
+        new(cfgPath, r ?? new FakeProcessRunner(), _fs);
 
     private string WriteCfg(WatchConfig c)
     {
-        var p = Path.Combine(_tempDir, "cfg.json");
-        File.WriteAllText(p, JsonSerializer.Serialize(c));
+        var p = "/cfg.json";
+        _fs.AddFile(p, JsonSerializer.Serialize(c), DateTime.UtcNow);
         return p;
     }
 
     private string WriteFile(string n, string c = "test")
     {
-        var p = Path.Combine(_tempDir, n);
-        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-        File.WriteAllText(p, c);
+        var p = "/" + n;
+        _fs.AddFile(p, c, DateTime.UtcNow);
         return p;
     }
 
@@ -55,7 +52,7 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task LoadConfiguration_MissingFile_ThrowsFileNotFound()
     {
-        var app = CreateApp(Path.Combine(_tempDir, "none.json"));
+        var app = CreateApp("/none.json");
         await Assert.ThrowsAsync<FileNotFoundException>(() => app.LoadConfigurationAsync(default));
     }
 
@@ -76,8 +73,8 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task SetupWatchers_TwoFilesSameDir_OneWatcher()
     {
-        var s1 = WriteFile("1.txt");
-        var s2 = WriteFile("2.txt");
+        var s1 = WriteFile("dir/1.txt");
+        var s2 = WriteFile("dir/2.txt");
         var app = CreateApp(
             WriteCfg(
                 new()
@@ -109,7 +106,7 @@ public sealed class FileWatcherAppTests : IDisposable
         );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "s.txt"));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "s.txt"));
         Assert.Single(app._pendingTokens);
     }
 
@@ -125,15 +122,12 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
 
-        // First event: processes and schedules actions
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "spurious.txt"));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "spurious.txt"));
         Assert.Single(app._pendingTokens);
 
-        // Clear the pending tokens to act like the action finished
         app._pendingTokens.Clear();
 
-        // Second event: same exact file size and write time. Should be ignored.
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "spurious.txt"));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "spurious.txt"));
         Assert.Empty(app._pendingTokens);
     }
 
@@ -149,16 +143,13 @@ public sealed class FileWatcherAppTests : IDisposable
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
 
-        // First event
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "modified.txt"));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "modified.txt"));
         Assert.Single(app._pendingTokens);
         app._pendingTokens.Clear();
 
-        // Modify the file to change its state (size/timestamp)
-        File.WriteAllText(src, "new content");
+        _fs.AddFile(src, "new content", DateTime.UtcNow.AddMinutes(1)); // Change timestamp & size
 
-        // Second event: file actually changed, should process
-        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "modified.txt"));
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "modified.txt"));
         Assert.Single(app._pendingTokens);
     }
 
@@ -166,20 +157,23 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task ScheduleActions_CopiesFile()
     {
         var src = WriteFile("s.txt", "content");
-        var dst = Path.Combine(_tempDir, "d.txt");
+        var dst = "/d.txt";
         var app = CreateApp(WriteCfg(new() { Settings = new() { DebounceMs = 0 } }));
         await app.LoadConfigurationAsync(default);
         app.ScheduleActions(new() { Source = src, CopyTo = dst });
-        await Task.Delay(200);
-        Assert.Equal("content", File.ReadAllText(dst));
+
+        await Task.Delay(50); // wait for Task.Run inside ScheduleActions to finish
+
+        Assert.True(_fs.FileExists(dst));
+        Assert.Equal("content", _fs.Files[dst]);
     }
 
     [Fact]
     public async Task RunHookAsync_InvokesRunner()
     {
         var r = new FakeProcessRunner();
-        var app = CreateApp("cfg.json", r);
-        await app.RunHookAsync("cmd", _tempDir, default);
+        var app = CreateApp("/cfg.json", r);
+        await app.RunHookAsync("cmd", "/tmp", default);
         Assert.Single(r.Calls);
         Assert.Equal("cmd", r.Calls[0].Command);
     }
@@ -188,7 +182,7 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task RunStartupHooksAsync_InvokesRunner()
     {
         var r = new FakeProcessRunner();
-        var app = CreateApp("cfg.json", r);
+        var app = CreateApp("/cfg.json", r);
         app.Config = new() { Hooks = new() { OnStartup = [new() { Command = "start" }] } };
         await app.RunStartupHooksAsync(default);
         Assert.Single(r.Calls);
@@ -200,10 +194,13 @@ public sealed class FileWatcherAppTests : IDisposable
         var p = WriteCfg(new() { Settings = new() { DebounceMs = 1 } });
         var app = CreateApp(p);
         await app.LoadConfigurationAsync(default);
-        File.WriteAllText(
+
+        _fs.AddFile(
             p,
-            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } })
+            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }),
+            DateTime.UtcNow
         );
+
         await app.ReloadConfigurationAsync(default);
         Assert.Equal(9, app.Config.Settings.DebounceMs);
     }
@@ -211,8 +208,11 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public void Dispose_ClearsResources()
     {
-        var app = CreateApp("cfg.json");
-        app._directoryWatchers.TryAdd("dir", new FileSystemWatcher(_tempDir));
+        var app = CreateApp("/cfg.json");
+        app._directoryWatchers.TryAdd(
+            "dir",
+            new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite)
+        );
         app.Dispose();
         Assert.Empty(app._directoryWatchers);
     }
