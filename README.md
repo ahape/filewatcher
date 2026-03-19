@@ -7,9 +7,10 @@ Filewatcher is a tiny helper that keeps two folders in sync. Point it at the fil
 - Debounced copying prevents half-written files from being deployed.
 - Optional backups give you a safety net before overwriting destination files.
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
+- **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
 
 ## Requirements
-- [ .NET SDK 9.0+](https://dotnet.microsoft.com/download)
+- [ .NET SDK 10.0+](https://dotnet.microsoft.com/download)
 - Windows file paths are used in the sample config, but any OS supported by .NET works as long as the paths are valid.
 
 ## First-time setup
@@ -28,7 +29,7 @@ While the app is running:
 - `q` exits cleanly.
 - Any other key prints the current watcher/status summary.
 
-Keep the console window open; Filewatcher writes a short log each time it copies a file or hits an error.
+Keep the console window open; Filewatcher writes a short log each time it copies a file or hits an error. You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
 
 ## Configuration reference (`watchconfig.json`)
 ```json
@@ -36,7 +37,8 @@ Keep the console window open; Filewatcher writes a short log each time it copies
   "settings": {
     "debounceMs": 1000,
     "createBackups": false,
-    "logLevel": "Info"
+    "logLevel": "Info",
+    "dashboardPort": 5000
   },
   "mappings": [
     {
@@ -51,6 +53,7 @@ Keep the console window open; Filewatcher writes a short log each time it copies
 - `debounceMs`: wait time (in ms) after a change before copying. Increase if your editor saves in bursts.
 - `createBackups`: `true` creates timestamped backups of the destination before overwriting.
 - `logLevel`: currently informational only; keep as `Info`.
+- `dashboardPort`: The port for the real-time Web Dashboard UI.
 - Each entry in `mappings`:
   - `source`: full path to the file you actively edit.
   - `destination`: full path that should receive the copy (directories are created if missing).
