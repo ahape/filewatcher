@@ -1,85 +1,117 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
 namespace FileWatcher.Tests;
 
-public class HookTests : IDisposable
+/// <summary>
+/// Integration tests for ShellProcessRunner.
+/// These tests spawn real OS processes to verify that stdout/stderr are piped
+/// and that exit codes are captured correctly.
+/// </summary>
+public sealed class ShellProcessRunnerTests : IDisposable
 {
-    private readonly StringWriter _outWriter;
-    private readonly StringWriter _errWriter;
+    private readonly StringWriter _out;
+    private readonly StringWriter _err;
     private readonly TextWriter _originalOut;
     private readonly TextWriter _originalErr;
 
-    public HookTests()
+    public ShellProcessRunnerTests()
     {
-        _outWriter = new StringWriter();
-        _errWriter = new StringWriter();
-
+        _out = new StringWriter();
+        _err = new StringWriter();
         _originalOut = Console.Out;
         _originalErr = Console.Error;
-
-        Console.SetOut(_outWriter);
-        Console.SetError(_errWriter);
-    }
-
-    [Fact]
-    public async Task RunHookAsync_PipesStandardOutputAndErrorToConsole()
-    {
-        // Arrange
-        // Create an empty dummy config file just to instantiate the app
-        var dummyConfigPath = Path.GetTempFileName();
-        File.WriteAllText(dummyConfigPath, "{}");
-
-        object appInstance;
-        try
-        {
-            var appType = typeof(WatchConfig).Assembly.GetType("FileWatcher.FileWatcherApp")
-                          ?? throw new InvalidOperationException("FileWatcherApp not found");
-            appInstance = Activator.CreateInstance(appType, new object[] { dummyConfigPath })
-                          ?? throw new InvalidOperationException("Could not create FileWatcherApp");
-        }
-        finally
-        {
-            File.Delete(dummyConfigPath);
-        }
-
-        var hookEvent = new HookEvent
-        {
-            // Windows specific command to print to stdout and stderr
-            Command = "echo Standard Output Message && echo Standard Error Message 1>&2",
-            Location = Environment.CurrentDirectory
-        };
-
-        var methodInfo = appInstance.GetType().GetMethod("RunHookAsync", BindingFlags.NonPublic | BindingFlags.Instance)
-                         ?? throw new InvalidOperationException("RunHookAsync method not found");
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        // Act
-        var task = (Task)methodInfo.Invoke(appInstance, new object[] { hookEvent, cts.Token })!;
-        await task;
-
-        // Give the process a moment to flush buffers to the StringWriter
-        await Task.Delay(100);
-
-        var output = _outWriter.ToString();
-        var error = _errWriter.ToString();
-
-        // Assert
-        Assert.Contains("Standard Output Message", output);
-        Assert.Contains("Standard Error Message", error);
+        Console.SetOut(_out);
+        Console.SetError(_err);
     }
 
     public void Dispose()
     {
         Console.SetOut(_originalOut);
         Console.SetError(_originalErr);
-        
-        _outWriter.Dispose();
-        _errWriter.Dispose();
+        _out.Dispose();
+        _err.Dispose();
+    }
+
+    private static readonly ShellProcessRunner Runner = new();
+
+    private static string StdoutCommand(string message) =>
+        OperatingSystem.IsWindows()
+            ? $"echo {message}"
+            : $"echo {message}";
+
+    private static string StderrCommand(string message) =>
+        OperatingSystem.IsWindows()
+            ? $"echo {message} 1>&2"
+            : $"echo {message} 1>&2";
+
+    private static string ExitCodeCommand(int code) =>
+        OperatingSystem.IsWindows()
+            ? $"exit /b {code}"
+            : $"exit {code}";
+
+    private static CancellationTokenSource Timeout5s() => new(TimeSpan.FromSeconds(5));
+
+    [Fact]
+    public async Task RunAsync_CommandWithOutput_DeliveredToOnOutputCallback()
+    {
+        var received = new System.Collections.Generic.List<string>();
+
+        using var cts = Timeout5s();
+        await Runner.RunAsync(
+            StdoutCommand("hello-stdout"),
+            Environment.CurrentDirectory,
+            line => received.Add(line),
+            _ => { },
+            cts.Token);
+
+        Assert.Contains(received, line => line.Contains("hello-stdout"));
+    }
+
+    [Fact]
+    public async Task RunAsync_CommandWithStderr_DeliveredToOnErrorCallback()
+    {
+        var received = new System.Collections.Generic.List<string>();
+
+        using var cts = Timeout5s();
+        await Runner.RunAsync(
+            StderrCommand("hello-stderr"),
+            Environment.CurrentDirectory,
+            _ => { },
+            line => received.Add(line),
+            cts.Token);
+
+        Assert.Contains(received, line => line.Contains("hello-stderr"));
+    }
+
+    [Fact]
+    public async Task RunAsync_SuccessfulCommand_ReturnsExitCodeZero()
+    {
+        using var cts = Timeout5s();
+        var exitCode = await Runner.RunAsync(
+            StdoutCommand("ok"),
+            Environment.CurrentDirectory,
+            _ => { },
+            _ => { },
+            cts.Token);
+
+        Assert.Equal(0, exitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_FailingCommand_ReturnsNonZeroExitCode()
+    {
+        using var cts = Timeout5s();
+        var exitCode = await Runner.RunAsync(
+            ExitCodeCommand(3),
+            Environment.CurrentDirectory,
+            _ => { },
+            _ => { },
+            cts.Token);
+
+        Assert.NotEqual(0, exitCode);
     }
 }

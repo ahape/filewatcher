@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+
+[assembly: InternalsVisibleTo("FileWatcher.Tests")]
 
 namespace FileWatcher;
 
@@ -48,9 +52,62 @@ internal static class Program
 }
 
 /// <summary>
-/// Coordinates configuration loading, watcher lifecycle, and the console UI loop.
+/// Abstracts shell command execution so the application logic can be tested
+/// without spawning real processes.
 /// </summary>
+internal interface IProcessRunner
+{
+    Task<int> RunAsync(
+        string command,
+        string workingDirectory,
+        Action<string> onOutput,
+        Action<string> onError,
+        CancellationToken token);
+}
+
 /// <summary>
+/// Production implementation that delegates to the OS shell.
+/// </summary>
+internal sealed class ShellProcessRunner : IProcessRunner
+{
+    public async Task<int> RunAsync(
+        string command,
+        string workingDirectory,
+        Action<string> onOutput,
+        Action<string> onError,
+        CancellationToken token)
+    {
+        var (fileName, args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c \"{command}\"")
+            : ("/bin/sh", $"-c \"{command}\"");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = new Process { StartInfo = psi };
+
+        process.OutputDataReceived += (_, e) => { if (e.Data != null) onOutput(e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data != null) onError(e.Data); };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        await process.WaitForExitAsync(token);
+        return process.ExitCode;
+    }
+}
+
+/// <summary>
+/// Coordinates configuration loading, watcher lifecycle, and the console UI loop.
 /// Encapsulates the long-running watcher workflow so Program.cs stays thin and testable.
 /// </summary>
 internal sealed class FileWatcherApp : IDisposable
@@ -60,15 +117,22 @@ internal sealed class FileWatcherApp : IDisposable
     private static readonly JsonSerializerOptions SerializerOptionsIndented = CreateSerializerOptions(writeIndented: true);
 
     private readonly string _configPath;
+    private readonly IProcessRunner _processRunner;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingCopyTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FileSystemWatcher> _directoryWatchers = new(StringComparer.OrdinalIgnoreCase);
     private ConcurrentDictionary<string, IReadOnlyList<FileMapping>> _directoryMappings = new(StringComparer.OrdinalIgnoreCase);
     private WatchConfig _config = new();
     private bool _disposed;
 
-    public FileWatcherApp(string configPath)
+    // Internal observable state — used by tests without reflection.
+    internal WatchConfig Config { get => _config; set => _config = value; }
+    internal ConcurrentDictionary<string, FileSystemWatcher> DirectoryWatchers => _directoryWatchers;
+    internal ConcurrentDictionary<string, CancellationTokenSource> PendingCopyTokens => _pendingCopyTokens;
+
+    public FileWatcherApp(string configPath, IProcessRunner processRunner = null)
     {
         _configPath = configPath;
+        _processRunner = processRunner ?? new ShellProcessRunner();
     }
 
     /// <summary>
@@ -107,7 +171,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Reloads the JSON file while keeping the process alive.
     /// </summary>
-    private async Task ReloadConfigurationAsync(CancellationToken token)
+    internal async Task ReloadConfigurationAsync(CancellationToken token)
     {
         try
         {
@@ -150,7 +214,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Guarantees there is a config on disk by seeding a sample if needed.
     /// </summary>
-    private async Task EnsureConfigurationExistsAsync(CancellationToken token)
+    internal async Task EnsureConfigurationExistsAsync(CancellationToken token)
     {
         if (File.Exists(_configPath))
         {
@@ -165,7 +229,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Reads and deserializes watchconfig.json with friendly error messages.
     /// </summary>
-    private async Task LoadConfigurationAsync(CancellationToken token)
+    internal async Task LoadConfigurationAsync(CancellationToken token)
     {
         try
         {
@@ -187,7 +251,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Rebuilds the watcher set to match the current configuration.
     /// </summary>
-    private void SetupWatchers()
+    internal void SetupWatchers()
     {
         DisposeWatchers();
 
@@ -220,7 +284,7 @@ internal sealed class FileWatcherApp : IDisposable
         _directoryMappings = latestMappings;
     }
 
-    private bool ValidateMapping(FileMapping mapping)
+    internal bool ValidateMapping(FileMapping mapping)
     {
         if (string.IsNullOrWhiteSpace(mapping.Source) || string.IsNullOrWhiteSpace(mapping.Destination))
         {
@@ -262,7 +326,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Filters raw file system events down to the mapping that needs copying.
     /// </summary>
-    private void HandleFileChange(FileSystemEventArgs args)
+    internal void HandleFileChange(FileSystemEventArgs args)
     {
         if (args.ChangeType != WatcherChangeTypes.Changed)
         {
@@ -287,7 +351,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Ensures there is at most one pending copy per destination, with optional debounce.
     /// </summary>
-    private void ScheduleCopy(FileMapping mapping, bool immediate = false)
+    internal void ScheduleCopy(FileMapping mapping, bool immediate = false)
     {
         var tokenSource = new CancellationTokenSource();
 
@@ -337,7 +401,7 @@ internal sealed class FileWatcherApp : IDisposable
         }
     }
 
-    private async Task CopyFileWithRetryAsync(FileMapping mapping, CancellationToken token, int maxRetries = 3)
+    internal async Task CopyFileWithRetryAsync(FileMapping mapping, CancellationToken token, int maxRetries = 3)
     {
         var destinationDirectory = Path.GetDirectoryName(mapping.Destination);
         if (!string.IsNullOrEmpty(destinationDirectory))
@@ -365,7 +429,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Writes a timestamped safety copy if backups are enabled.
     /// </summary>
-    private void CreateBackupIfNeeded(string destination)
+    internal void CreateBackupIfNeeded(string destination)
     {
         if (!_config.Settings.CreateBackups || !File.Exists(destination))
         {
@@ -379,7 +443,7 @@ internal sealed class FileWatcherApp : IDisposable
     /// <summary>
     /// Primes every mapping so destinations are up-to-date even before the first change event.
     /// </summary>
-    private void TriggerInitialCopies(bool immediate)
+    internal void TriggerInitialCopies(bool immediate)
     {
         foreach (var mapping in _directoryMappings.Values.SelectMany(list => list))
         {
@@ -387,7 +451,7 @@ internal sealed class FileWatcherApp : IDisposable
         }
     }
 
-    private async Task RunStartupHookAsync(CancellationToken token)
+    internal async Task RunStartupHookAsync(CancellationToken token)
     {
         var hook = _config.Hooks?.OnStartup;
         if (hook != null)
@@ -397,7 +461,7 @@ internal sealed class FileWatcherApp : IDisposable
         }
     }
 
-    private async Task RunUpdateHookAsync(FileMapping mapping, CancellationToken token)
+    internal async Task RunUpdateHookAsync(FileMapping mapping, CancellationToken token)
     {
         var hook = _config.Hooks?.OnUpdate;
         if (hook == null || string.IsNullOrWhiteSpace(hook.Command)) return;
@@ -414,41 +478,31 @@ internal sealed class FileWatcherApp : IDisposable
         await RunHookAsync(hook, token);
     }
 
-    private async Task RunHookAsync(HookEvent hook, CancellationToken token)
+    internal async Task RunHookAsync(HookEvent hook, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(hook.Command)) return;
 
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo
+            var workingDirectory = string.IsNullOrWhiteSpace(hook.Location)
+                ? Environment.CurrentDirectory
+                : hook.Location;
+
+            var exitCode = await _processRunner.RunAsync(
+                hook.Command,
+                workingDirectory,
+                line => Console.WriteLine(line),
+                line => Console.Error.WriteLine(line),
+                token);
+
+            if (exitCode != 0)
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{hook.Command}\"",
-                WorkingDirectory = string.IsNullOrWhiteSpace(hook.Location) ? Environment.CurrentDirectory : hook.Location,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = new System.Diagnostics.Process { StartInfo = psi };
-
-            process.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.Error.WriteLine(e.Data); };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            await process.WaitForExitAsync(token);
-            if (process.ExitCode != 0)
-            {
-                WriteWarning($"Hook exited with code {process.ExitCode}");
+                WriteWarning($"Hook exited with code {exitCode}");
             }
         }
         catch (OperationCanceledException)
         {
-            // Expected during shutdown
+            // Expected during shutdown.
         }
         catch (Exception ex)
         {
@@ -456,7 +510,7 @@ internal sealed class FileWatcherApp : IDisposable
         }
     }
 
-    private void ShowStatus()
+    internal void ShowStatus()
     {
         WriteInfo($"\n=== Status at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
         Console.WriteLine($"Active watchers: {_directoryWatchers.Count}");
@@ -473,14 +527,14 @@ internal sealed class FileWatcherApp : IDisposable
         }
     }
 
-    private void PrintWelcome()
+    internal void PrintWelcome()
     {
         Console.WriteLine();
         WriteSuccess($"Monitoring {_directoryMappings.Values.Sum(list => list.Count)} enabled mapping(s).");
         Console.WriteLine("Press 'r' to reload config, 'q' to quit, any other key for status.");
     }
 
-    private static void WriteCopySummary(FileMapping mapping)
+    internal static void WriteCopySummary(FileMapping mapping)
     {
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"\n✓ Copied {Path.GetFileName(mapping.Source)} at {DateTime.Now:HH:mm:ss}");
