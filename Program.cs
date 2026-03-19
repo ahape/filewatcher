@@ -58,7 +58,12 @@ internal sealed class ShellProcessRunner : IProcessRunner
 // Encapsulates the long-running watcher workflow so Program.cs stays thin and testable.
 internal sealed class FileWatcherApp(string configPath, IProcessRunner? processRunner = null) : IDisposable
 {
+    // 75 ms gives ~13 polls/s — responsive enough for key input without busy-waiting.
     private static readonly TimeSpan KeyPollInterval = TimeSpan.FromMilliseconds(75);
+    // Base delay for exponential back-off retries when a file is briefly locked.
+    private const int CopyRetryBackoffMs = 150;
+    // Fallback port when the config does not specify one.
+    private const int DefaultDashboardPort = 5000;
     private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
     private static readonly JsonSerializerOptions SerializerOptionsIndented = CreateSerializerOptions(writeIndented: true);
     private readonly string _configPath = configPath;
@@ -81,7 +86,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         TriggerInitialCopies(immediate: true);
         await RunStartupHookAsync(token);
         // Start web dashboard
-        var port = _config.Settings.DashboardPort > 0 ? _config.Settings.DashboardPort : 5000;
+        var port = _config.Settings.DashboardPort > 0 ? _config.Settings.DashboardPort : DefaultDashboardPort;
         _ = LogWebServer.StartAsync(port, token);
         PrintWelcome(port);
         await RunConsoleLoopAsync(token);
@@ -235,7 +240,12 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         {
             return;
         }
-        var directory = Path.GetDirectoryName(args.FullPath) ?? string.Empty;
+        var directory = Path.GetDirectoryName(args.FullPath);
+        if (directory is null)
+        {
+            WriteWarning($"Unable to determine directory for path: {args.FullPath}");
+            return;
+        }
         if (!_directoryMappings.TryGetValue(directory, out var mappings))
         {
             return;
@@ -308,7 +318,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             }
             catch (IOException) when (attempt < maxRetries)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(150 * attempt), token);
+                await Task.Delay(TimeSpan.FromMilliseconds(CopyRetryBackoffMs * attempt), token);
             }
         }
     }
@@ -436,18 +446,85 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     }
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        if (_disposed) return;
+        // Cancel in-flight copies before disposing watchers so that any running
+        // CopyFileWithRetryAsync tasks receive the cancellation signal and exit
+        // cleanly rather than racing against a disposed FileSystemWatcher.
         CancelPendingCopies();
         DisposeWatchers();
         _disposed = true;
-        GC.SuppressFinalize(this);
+        GC.SuppressFinalize(this); // No finalizer — tells the GC to skip the finalizer queue.
     }
 }
-public sealed record WatchConfig { public List<FileMapping> Mappings { get; set; } = []; public WatchSettings Settings { get; set; } = new(); public WatchHooks? Hooks { get; set; } public static WatchConfig CreateSample() => new() { Settings = new() { DebounceMs = 1000, DashboardPort = 5000 }, Mappings = [new() { Source = "src/file.js", Destination = "out/file.js", Description = "App script" }] }; }
-public sealed record FileMapping { public string? Id { get; set; } public string Source { get; set; } = ""; public string Destination { get; set; } = ""; public bool Enabled { get; set; } = true; public string Description { get; set; } = ""; }
-public sealed record WatchSettings { public int DebounceMs { get; set; } = 1000; public bool CreateBackups { get; set; } = false; public string LogLevel { get; set; } = "Info"; public int DashboardPort { get; set; } = 5000; }
-public sealed record WatchHooks { public HookEvent? OnStartup { get; set; } public HookEvent? OnUpdate { get; set; } }
-public sealed record HookEvent { public string Location { get; set; } = ""; public string Command { get; set; } = ""; public string? ListenTo { get; set; } }
+
+/// <summary>Root configuration object deserialised from <c>watchconfig.json</c>.</summary>
+public sealed record WatchConfig
+{
+    /// <summary>Source → destination file mappings to watch and sync.</summary>
+    public List<FileMapping> Mappings { get; set; } = [];
+    /// <summary>Global settings such as debounce delay and dashboard port.</summary>
+    public WatchSettings Settings { get; set; } = new();
+    /// <summary>Optional lifecycle hooks executed on startup or file update.</summary>
+    public WatchHooks? Hooks { get; set; }
+    /// <summary>Returns a minimal sample configuration suitable for first-run seeding.</summary>
+    public static WatchConfig CreateSample() => new()
+    {
+        Settings = new() { DebounceMs = 1000, DashboardPort = 5000 },
+        Mappings = [new() { Source = "src/file.js", Destination = "out/file.js", Description = "App script" }]
+    };
+}
+
+/// <summary>Describes a single source → destination file sync pair.</summary>
+public sealed record FileMapping
+{
+    /// <summary>Optional unique identifier used to bind hooks to a specific mapping.</summary>
+    public string? Id { get; set; }
+    /// <summary>Absolute or relative path to the source file.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>Absolute or relative path to the destination file.</summary>
+    public string Destination { get; set; } = "";
+    /// <summary>When <c>false</c> the mapping is skipped entirely.</summary>
+    public bool Enabled { get; set; } = true;
+    /// <summary>Human-readable description shown in copy summaries and warnings.</summary>
+    public string Description { get; set; } = "";
+}
+
+/// <summary>Global application settings read from the <c>settings</c> object in the config file.</summary>
+public sealed record WatchSettings
+{
+    /// <summary>Milliseconds to wait after a file change before copying, to coalesce rapid saves.</summary>
+    public int DebounceMs { get; set; } = 1000;
+    /// <summary>When <c>true</c>, a timestamped backup of the destination is created before each overwrite.</summary>
+    public bool CreateBackups { get; set; } = false;
+    /// <summary>Reserved for future log-verbosity filtering; not yet enforced.</summary>
+    public string LogLevel { get; set; } = "Info";
+    /// <summary>TCP port for the web dashboard. Defaults to 5000 if zero or omitted.</summary>
+    public int DashboardPort { get; set; } = 5000;
+}
+
+/// <summary>Container for the optional lifecycle hook commands.</summary>
+public sealed record WatchHooks
+{
+    /// <summary>Hook executed once when the application starts (or after a config reload).</summary>
+    public HookEvent? OnStartup { get; set; }
+    /// <summary>Hook executed after each successful file copy.</summary>
+    public HookEvent? OnUpdate { get; set; }
+}
+
+/// <summary>
+/// A single hook command with an optional working directory and mapping filter.
+/// <para><see cref="Location"/> may be empty or omitted; the process then runs in
+/// <see cref="Environment.CurrentDirectory"/>.</para>
+/// </summary>
+public sealed record HookEvent
+{
+    /// <summary>Working directory for the command. Empty or whitespace uses the current directory.</summary>
+    public string Location { get; set; } = "";
+    /// <summary>Shell command to execute.</summary>
+    public string Command { get; set; } = "";
+    /// <summary>
+    /// When set, the hook only fires for the mapping whose <see cref="FileMapping.Id"/> matches.
+    /// When <c>null</c> or empty, the hook fires for every mapping update.
+    /// </summary>
+    public string? ListenTo { get; set; }
+}

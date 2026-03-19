@@ -100,7 +100,6 @@
         }
       },
       "required": [
-        "location",
         "command"
       ],
       "additionalProperties": false
