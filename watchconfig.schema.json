@@ -1,75 +1,60 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "File Sync and Build Configuration",
-  "description": "Configuration schema for mapping files and running lifecycle hooks.",
+  "title": "Watch Configuration Schema",
+  "description": "Configuration file for file watching and syncing.",
   "type": "object",
-  "required": [
-    "settings",
-    "mappings"
-  ],
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL to the JSON schema."
+    },
     "settings": {
       "type": "object",
-      "description": "Global settings for the application.",
-      "required": [
-        "debounceMs",
-        "createBackups",
-        "logLevel"
-      ],
+      "description": "Global application settings.",
       "properties": {
         "debounceMs": {
           "type": "integer",
           "minimum": 0,
-          "description": "Delay in milliseconds to wait before triggering an action."
+          "default": 1000,
+          "description": "Delay in milliseconds before triggering an action after a file change."
         },
         "createBackups": {
           "type": "boolean",
-          "description": "Determines if backups should be created before overwriting files."
+          "default": false,
+          "description": "Whether to create backups of files before overwriting."
         },
         "logLevel": {
           "type": "string",
-          "enum": [
-            "Trace",
-            "Debug",
-            "Info",
-            "Warn",
-            "Error",
-            "Fatal"
-          ],
-          "description": "The verbosity level of the logs."
+          "enum": ["Trace", "Debug", "Info", "Warn", "Error", "Fatal", "None"],
+          "default": "Info",
+          "description": "The verbosity of the console output."
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "hooks": {
       "type": "object",
-      "description": "Lifecycle scripts to run at specific events.",
+      "description": "Commands to execute on specific lifecycle events.",
       "properties": {
         "onStartup": {
-          "$ref": "#/$defs/hookConfiguration",
-          "description": "Hook executed when the application starts."
+          "$ref": "#/definitions/hookEvent"
         },
         "onUpdate": {
-          "$ref": "#/$defs/hookConfiguration",
-          "description": "Hook executed when a file update is detected."
-        },
-        "onShutdown": {
-          "$ref": "#/$defs/hookConfiguration",
-          "description": "Hook executed when the application is closing."
+          "$ref": "#/definitions/hookEvent"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "mappings": {
       "type": "array",
-      "description": "List of file or directory mappings to sync/copy.",
+      "description": "List of files or directories to sync/watch.",
       "items": {
         "type": "object",
-        "required": [
-          "source",
-          "destination"
-        ],
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for the mapping, used to link hooks to specific mappings."
+          },
           "source": {
             "type": "string",
             "description": "The absolute or relative path to the source file or directory."
@@ -85,20 +70,21 @@
           },
           "description": {
             "type": "string",
-            "description": "Human-readable description of what this mapping does."
+            "description": "A human-readable description of what this mapping does."
           }
         },
-        "additionalProperties": true
+        "required": [
+          "source",
+          "destination"
+        ],
+        "additionalProperties": false
       }
     }
   },
-  "additionalProperties": true,
-  "$defs": {
-    "hookConfiguration": {
+  "additionalProperties": false,
+  "definitions": {
+    "hookEvent": {
       "type": "object",
-      "required": [
-        "command"
-      ],
       "properties": {
         "location": {
           "type": "string",
@@ -106,10 +92,18 @@
         },
         "command": {
           "type": "string",
-          "description": "The shell command or script to execute."
+          "description": "The terminal command to run."
+        },
+        "listenTo": {
+          "type": "string",
+          "description": "The ID of a mapping to watch. If omitted, the hook applies globally."
         }
       },
-      "additionalProperties": true
+      "required": [
+        "location",
+        "command"
+      ],
+      "additionalProperties": false
     }
   }
 }

@@ -1,38 +1,31 @@
 {
-  "$schema": "./watchconfig.schema.json",
   "settings": {
-    "debounceMs": 1000,
-    "createBackups": false,
-    "logLevel": "Info"
+    "debounceMs": 500,
+    "logLevel": "Debug"
   },
   "hooks": {
     "onStartup": {
-      "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
-      "command": "npx tsc -w -p tsconfig.development.json"
+      "location": "./scripts",
+      "command": "echo 'Starting up!'"
     },
     "onUpdate": {
-      "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
-      "command": "npm run ts:lint"
+      "listenTo": "my-app-bundle",
+      "location": "./src/app",
+      "command": "echo 'Bundle updated.'"
     }
   },
   "mappings": [
     {
-      "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
-      "destination": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\scripts\\build\\brightmetrics.js",
-      "enabled": true,
-      "description": "Main JavaScript bundle"
+      "id": "my-app-bundle",
+      "source": "./src/app/bundle.js",
+      "destination": "./dist/app.js",
+      "description": "Main application javascript bundle"
     },
     {
-      "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\styles\\build\\brightmetrics.css",
-      "destination": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\styles\\build\\brightmetrics.css",
-      "enabled": true,
-      "description": "Main stylesheet"
-    },
-    {
-      "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\templates\\admin\\datacustomization\\ccf-editor-view.html",
-      "destination": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\templates\\admin\\datacustomization\\ccf-editor-view.html",
-      "enabled": true,
-      "description": "CCF Editor View"
+      "source": "./assets/styles/main.css",
+      "destination": "./public/css/styles.css",
+      "enabled": false,
+      "description": "Main CSS file (currently disabled)"
     }
   ]
 }
