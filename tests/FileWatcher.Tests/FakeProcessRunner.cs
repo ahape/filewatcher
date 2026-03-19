@@ -18,7 +18,8 @@ internal sealed class FakeProcessRunner : IProcessRunner
         CancellationToken token
     )
     {
-        if (ShouldThrow) throw new Exception("fail");
+        if (ShouldThrow)
+            throw new Exception("fail");
         token.ThrowIfCancellationRequested();
         Calls.Add(new Call(command, workingDirectory));
         if (OutputLine != null)

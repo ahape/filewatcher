@@ -11,20 +11,20 @@ namespace FileWatcher;
 internal static class Program
 {
     private const string ConfigFileName = "watchconfig.json";
-    private static readonly CancellationTokenSource ShutdownTokenSource = new();
+    private static readonly CancellationTokenSource s_shutdownTokenSource = new();
 
     private static async Task Main()
     {
         Console.CancelKeyPress += (_, args) =>
         {
             args.Cancel = true;
-            ShutdownTokenSource.Cancel();
+            s_shutdownTokenSource.Cancel();
         };
 
         try
         {
             using var app = new FileWatcherApp(ConfigFileName);
-            await app.RunAsync(ShutdownTokenSource.Token);
+            await app.RunAsync(s_shutdownTokenSource.Token);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -35,7 +35,7 @@ internal static class Program
         }
         finally
         {
-            ShutdownTokenSource.Dispose();
+            s_shutdownTokenSource.Dispose();
         }
     }
 }

@@ -9,7 +9,13 @@ internal sealed class FakeConsole : IConsole
 
     public bool KeyAvailable => _keys.Count > 0;
 
-    public void EnqueueKey(char keyChar, ConsoleKey key, bool shift = false, bool alt = false, bool control = false)
+    public void EnqueueKey(
+        char keyChar,
+        ConsoleKey key,
+        bool shift = false,
+        bool alt = false,
+        bool control = false
+    )
     {
         _keys.Enqueue(new ConsoleKeyInfo(keyChar, key, shift, alt, control));
     }

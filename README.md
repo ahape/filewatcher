@@ -9,6 +9,7 @@ Filewatcher is a simple, agnostic file system watcher that triggers actions on f
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
 - **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
 - **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps.
+- **Non-blocking Startup**: The web server and file monitoring start immediately, even if you have long-running startup hooks (like a compiler in watch mode).
 
 ## Requirements
 - [.NET SDK 10.0+](https://dotnet.microsoft.com/download)
@@ -28,7 +29,7 @@ While the app is running:
 - `q` exits cleanly.
 - Any other key prints the current watcher/status summary.
 
-Keep the console window open; Filewatcher writes a short log each time it triggers an action or hits an error. Each line is prefixed with its severity (`[INFO]`, `[WARNING]`, `[ERROR]`, etc.). You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
+Keep the console window open; Filewatcher writes a short log each time it triggers an action or hits an error. Each line is prefixed with its severity (`[INFO]`, `[WARNING]`, `[ERROR]`, etc.). You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5002`).
 
 ## Configuration reference (`watchconfig.json`)
 
@@ -37,7 +38,7 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   "settings": {
     "debounceMs": 500,
     "logLevel": "Debug",
-    "dashboardPort": 5000
+    "dashboardPort": 5002
   },
   "hooks": {
     "onStartup": [

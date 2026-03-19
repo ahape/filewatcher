@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\..\dashboard.html" Link="dashboard.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="..\..\dashboard.html"
+      Link="dashboard.html"
+      CopyToOutputDirectory="PreserveNewest"
+    />
   </ItemGroup>
 </Project>

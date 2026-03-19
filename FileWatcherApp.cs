@@ -63,16 +63,15 @@ internal sealed class FileWatcherApp(
     {
         await LoadConfigurationAsync(token);
         SetupWatchers();
-        await RunStartupHooksAsync(token);
 
         int port =
             _config.Settings.DashboardPort > 0
                 ? _config.Settings.DashboardPort
                 : DefaultDashboardPort;
         _ = _webServer.StartAsync(port, token);
-
         PrintWelcome(port);
-        await RunConsoleLoopAsync(token);
+
+        await Task.WhenAll(RunStartupHooksAsync(token), RunConsoleLoopAsync(token));
     }
 
     /// <summary>
@@ -233,7 +232,10 @@ internal sealed class FileWatcherApp(
         LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
 
         string? directory = Path.GetDirectoryName(args.FullPath);
-        if (directory == null || !_directoryEntries.TryGetValue(directory, out IReadOnlyList<UpdateEntry>? entries))
+        if (
+            directory == null
+            || !_directoryEntries.TryGetValue(directory, out IReadOnlyList<UpdateEntry>? entries)
+        )
             return;
 
         UpdateEntry? entry = entries.FirstOrDefault(e =>
@@ -249,7 +251,10 @@ internal sealed class FileWatcherApp(
         {
             (DateTime LastWriteTimeUtc, long Length) currentState = _fs.GetFileInfo(args.FullPath);
             if (
-                _fileStates.TryGetValue(args.FullPath, out (DateTime LastWrite, long Size) previousState)
+                _fileStates.TryGetValue(
+                    args.FullPath,
+                    out (DateTime LastWrite, long Size) previousState
+                )
                 && previousState == currentState
             )
             {

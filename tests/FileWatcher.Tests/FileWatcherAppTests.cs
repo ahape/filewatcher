@@ -221,7 +221,11 @@ public sealed class FileWatcherAppTests : IDisposable
         var app = CreateApp(WriteCfg(cfg));
         _console.EnqueueKey('q', ConsoleKey.Q);
 
-        try { await app.RunAsync(default); } catch (OperationCanceledException) { }
+        try
+        {
+            await app.RunAsync(default);
+        }
+        catch (OperationCanceledException) { }
 
         Assert.Equal(1, _webServer.StartCount);
         Assert.Equal(1234, _webServer.LastPort);
@@ -234,7 +238,11 @@ public sealed class FileWatcherAppTests : IDisposable
         var app = CreateApp(p);
         await app.LoadConfigurationAsync(default);
 
-        _fs.AddFile(p, JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }), DateTime.UtcNow);
+        _fs.AddFile(
+            p,
+            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }),
+            DateTime.UtcNow
+        );
 
         _console.EnqueueKey('r', ConsoleKey.R);
         _console.EnqueueKey('q', ConsoleKey.Q);
@@ -254,27 +262,57 @@ public sealed class FileWatcherAppTests : IDisposable
 
         await app.ReloadConfigurationAsync(default);
         var logs = LogService.GetRecentLogs().ToList();
-        Assert.Contains(logs, l => l.Level == LogLevel.Error && l.Message.Contains("Failed to reload"));
+        Assert.Contains(
+            logs,
+            l => l.Level == LogLevel.Error && l.Message.Contains("Failed to reload")
+        );
     }
 
     [Fact]
     public async Task SetupWatchers_MissingSource_SkipsAndLogsWarning()
     {
-        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Description = "test", Enabled = true }] } }));
+        var app = CreateApp(
+            WriteCfg(
+                new()
+                {
+                    Hooks = new() { OnUpdate = [new() { Description = "test", Enabled = true }] },
+                }
+            )
+        );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
         var logs = LogService.GetRecentLogs().ToList();
-        Assert.Contains(logs, l => l.Level == LogLevel.Warning && l.Message.Contains("Entry skipped: source is missing (test)."));
+        Assert.Contains(
+            logs,
+            l =>
+                l.Level == LogLevel.Warning
+                && l.Message.Contains("Entry skipped: source is missing (test).")
+        );
     }
 
     [Fact]
     public async Task SetupWatchers_SourceNotFound_LogsWarning()
     {
-        var app = CreateApp(WriteCfg(new() { Hooks = new() { OnUpdate = [new() { Source = "/missing.txt", Enabled = true }] } }));
+        var app = CreateApp(
+            WriteCfg(
+                new()
+                {
+                    Hooks = new()
+                    {
+                        OnUpdate = [new() { Source = "/missing.txt", Enabled = true }],
+                    },
+                }
+            )
+        );
         await app.LoadConfigurationAsync(default);
         app.SetupWatchers();
         var logs = LogService.GetRecentLogs().ToList();
-        Assert.Contains(logs, l => l.Level == LogLevel.Warning && l.Message.Contains("Source file not found: /missing.txt"));
+        Assert.Contains(
+            logs,
+            l =>
+                l.Level == LogLevel.Warning
+                && l.Message.Contains("Source file not found: /missing.txt")
+        );
     }
 
     [Fact]
@@ -301,7 +339,10 @@ public sealed class FileWatcherAppTests : IDisposable
     public void Dispose_ClearsResources()
     {
         var app = CreateApp("/cfg.json");
-        app._directoryWatchers.TryAdd("dir", new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite));
+        app._directoryWatchers.TryAdd(
+            "dir",
+            new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite)
+        );
         app.Dispose();
         Assert.Empty(app._directoryWatchers);
     }
