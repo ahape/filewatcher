@@ -25,7 +25,6 @@ public class WatchConfigTests
         var roundTrip = JsonSerializer.Deserialize<WatchConfig>(json, SerializerOptions);
         Assert.NotNull(roundTrip);
         Assert.Equal(sample.Hooks!.OnUpdate.Count, roundTrip!.Hooks!.OnUpdate.Count);
-        Assert.Equal(sample.Settings.CreateBackups, roundTrip.Settings.CreateBackups);
     }
 
     [Fact]

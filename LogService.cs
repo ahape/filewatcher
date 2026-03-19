@@ -2,12 +2,6 @@ using System.Collections.Concurrent;
 
 namespace FileWatcher;
 
-/// <summary>Log severity levels for console and web-dashboard output.</summary>
-public enum LogLevel { Info, Success, Warning, Error, Copy }
-
-/// <summary>A single timestamped log entry captured by <see cref="LogService"/>.</summary>
-public record LogEntry(DateTime Timestamp, LogLevel Level, string Message);
-
 /// <summary>
 /// Centralised, thread-safe log sink. Writes to the console (with a text-level prefix
 /// for colour-blind accessibility) and raises <see cref="OnLog"/> for web-dashboard streaming.
