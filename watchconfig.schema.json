@@ -56,6 +56,10 @@
       "type": "object",
       "description": "A command to execute on startup.",
       "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional label shown in log prefixes to identify this hook's output (e.g., 'tsc-watcher')."
+        },
         "command": {
           "type": "string",
           "description": "Shell command to execute."
@@ -78,6 +82,10 @@
       "type": "object",
       "description": "Watches a source file; optionally copies it and/or runs a command on change.",
       "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional label shown in log prefixes to identify this hook's output (e.g., 'lint')."
+        },
         "source": {
           "type": "string",
           "description": "Absolute or relative path to the source file to watch."

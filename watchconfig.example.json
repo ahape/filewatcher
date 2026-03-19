@@ -1,31 +1,28 @@
 {
+  "$schema": "./watchconfig.schema.json",
   "settings": {
-    "debounceMs": 500,
+    "debounceMs": 1000,
     "logLevel": "Debug"
   },
   "hooks": {
     "onStartup": [
-      { "command": "echo 'Starting up!'" },
-      { "location": "./scripts", "command": "npm install" }
+      {
+        "location": "c:\\Users\\AlanHape\\source\\repos\\Azurite\\",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./run.ps1",
+        "logLevel": "None"
+      }
     ],
     "onUpdate": [
       {
-        "source": "./src/app/bundle.js",
-        "copyTo": "./dist/app.js",
-        "command": "echo 'Bundle updated.'",
-        "location": "./src/app",
-        "description": "Main application javascript bundle"
+        "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
+        "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
+        "command": "npm run lint",
+        "description": "TS/JS Linter"
       },
       {
-        "source": "./assets/styles/main.css",
-        "copyTo": "./public/css/styles.css",
-        "enabled": false,
-        "description": "Main CSS file (currently disabled)"
-      },
-      {
-        "source": "./config/app.env",
-        "command": "systemctl restart my-app",
-        "description": "Restart service when config changes (no file copy needed)"
+        "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
+        "copyTo": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\scripts\\build\\brightmetrics.js",
+        "description": "Main Javascript bundle (copy to server)"
       }
     ]
   }

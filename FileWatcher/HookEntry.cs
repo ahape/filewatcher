@@ -6,6 +6,12 @@ namespace FileWatcher;
 /// </summary>
 public abstract record HookEntry
 {
+    /// <summary>
+    /// Optional name shown in log prefixes to identify which subprocess produced the output
+    /// (e.g., <c>tsc-watcher</c>). When empty, logs use the generic <c>[Hook]</c> prefix.
+    /// </summary>
+    public string Name { get; set; } = "";
+
     /// <summary>Shell command to execute.</summary>
     public string Command { get; set; } = "";
 

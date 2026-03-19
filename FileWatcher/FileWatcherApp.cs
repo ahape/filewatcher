@@ -162,7 +162,7 @@ internal sealed class FileWatcherApp(
     internal async Task RunStartupHooksAsync(CancellationToken token)
     {
         foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
-            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, token);
+            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
     }
 
     /// <summary>
@@ -174,6 +174,7 @@ internal sealed class FileWatcherApp(
         string command,
         string location,
         LogLevel hookLogLevel,
+        string name,
         CancellationToken token
     )
     {
@@ -185,15 +186,16 @@ internal sealed class FileWatcherApp(
                 ? Environment.CurrentDirectory
                 : location;
             bool silent = hookLogLevel == LogLevel.None;
+            string tag = string.IsNullOrWhiteSpace(name) ? "Hook" : name;
             int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
-                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[Hook] {line}"),
-                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[Hook Error] {line}"),
+                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
+                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
                 token
             );
             if (exitCode != 0 && !silent)
-                LogService.Log(LogLevel.Warning, $"Hook exited with code {exitCode}");
+                LogService.Log(LogLevel.Warning, $"[{tag}] exited with code {exitCode}");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -395,7 +397,7 @@ internal sealed class FileWatcherApp(
         if (!string.IsNullOrWhiteSpace(entry.Command))
         {
             LogDebug($"Running command: {entry.Command}");
-            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, token);
+            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
         }
     }
 
