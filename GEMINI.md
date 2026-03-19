@@ -14,13 +14,16 @@ This document provides context and guidelines for interacting with the `filewatc
   - File-scoped namespaces
 
 ## Core Guidelines
-- **Minimize Source Lines of Code (SLoC)**: Avoid unnecessary classes, abstractions, or structural bloat. Keep DTOs/records concise; expand to multi-line only when adding XML doc comments.
+- **Project Structure**: Maintain a strict **one-class-per-file** structure.
+- **Formatting**: The project uses `dotnet format` under the hood. You can trigger it via the npm script: `npm run format`. This ensures correct formatting for C# 13 constructs without relying on unmaintained npm packages.
 - **Dependencies**: The project depends on `Microsoft.AspNetCore.App` for the built-in web server. Unless completely unavoidable, rely solely on built-in .NET SDK packages.
 - **Testing**: Maintain high test coverage using xUnit in the `FileWatcher.Tests` project. To run tests, simply execute `dotnet test`.
 
-## Features
-- The project implements a file system watcher with debounce, retry logic, and backup capabilities.
+## Features & Goals
+- The core goal of this project is to provide a simple, agnostic "on[Event] -> someAction" pipeline.
+- **Do not introduce opinionated, baked-in logic** (like retry loops, file backups, or auto-generating missing configuration files).
+- The system supports triggering file copies (`CopyTo`) and arbitrary subprocess commands (`Command`) with output piped to the main thread's stdout.
 - It features a built-in lightweight `Kestrel` web server (`LogWebServer.cs`) that broadcasts logs in real-time via Server-Sent Events (SSE) to a single-file HTML/JS dashboard (stored as a readable, multi-line raw string literal in `LogWebServer.cs`).
 
 ## When modifying files
-Always ensure that changes conform to the existing ultra-compact formatting, run the tests to confirm regressions are avoided, and verify no warnings (including nullable reference warnings) are introduced.
+Always ensure changes conform to the existing ultra-compact formatting and the one-class-per-file rule. Run the tests to confirm regressions are avoided, and verify no warnings (including nullable reference warnings) are introduced. Avoid adding opinionated logic outside the realm of simply executing user-configured commands or copies on file events.

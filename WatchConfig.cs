@@ -13,7 +13,7 @@ public sealed record WatchConfig
     public static WatchConfig CreateSample() =>
         new()
         {
-            Settings = new() { DebounceMs = 1000, DashboardPort = 5000 },
+            Settings = new() { DebounceMs = 1000, DashboardPort = 5002 },
             Hooks = new()
             {
                 OnStartup = [new() { Command = "echo started" }],

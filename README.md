@@ -1,86 +1,85 @@
 # Filewatcher
 
-Filewatcher is a tiny helper that keeps two folders in sync. Point it at the files you edit and the places they need to be copied to, then leave it running—every save is copied over automatically with a short debounce so you do not spam deployments.
+Filewatcher is a simple, agnostic file system watcher that triggers actions on file events (`Created` and `Changed`). It is designed around a straightforward "onEvent -> someAction" model, allowing you to copy changed files to another location (proxy/persistence) or run arbitrary subprocess commands that pipe their output to the main thread.
 
 ## Why you might want it
 - Watch any number of individual files across different folders.
-- Debounced copying prevents half-written files from being deployed.
-- Optional backups give you a safety net before overwriting destination files.
+- Debounced execution prevents spamming actions on rapid, repeated saves.
+- Run arbitrary commands (e.g., `npm run build`, `systemctl restart service`) whenever specific files change.
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
 - **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
 
 ## Requirements
-- [ .NET SDK 10.0+](https://dotnet.microsoft.com/download)
-- Windows file paths are used in the sample config, but any OS supported by .NET works as long as the paths are valid.
+- [.NET SDK 10.0+](https://dotnet.microsoft.com/download)
+- Windows, macOS, or Linux. (The app detects your OS to run commands via `cmd.exe` or `sh`).
 
 ## First-time setup
 1. **Clone or download** this repo.
-2. **Create a config**:
-   - On the first run the program creates `watchconfig.json` if it does not exist and exits, prompting you to edit it.
-   - Alternatively, copy `watchconfig.example.json` to `watchconfig.json` and edit that file directly.
-3. **Edit the config** so every mapping has a real `source` (the file you edit) and `destination` (where the copy should land).
+2. **Create a config**: Copy `watchconfig.example.json` to `watchconfig.json` in the run directory.
+3. **Edit the config** to define what files to watch (`source`), where to copy them (`copyTo`), and/or what command to run (`command`).
 
 ## Running the watcher
 ```powershell
 dotnet run
 ```
 While the app is running:
-- `r` reloads `watchconfig.json` without restarting.
+- `r` reloads `watchconfig.json` without restarting the watcher or dashboard.
 - `q` exits cleanly.
 - Any other key prints the current watcher/status summary.
 
-Keep the console window open; Filewatcher writes a short log each time it copies a file or hits an error — each line is prefixed with its severity (`[INFO]`, `[WARNING]`, `[ERROR]`, etc.) so the output is readable without colour support. You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
+Keep the console window open; Filewatcher writes a short log each time it triggers an action or hits an error. Each line is prefixed with its severity (`[INFO]`, `[WARNING]`, `[ERROR]`, etc.). You can also view these logs in real-time by navigating to the **Web Dashboard** (e.g., `http://localhost:5000`).
 
 ## Configuration reference (`watchconfig.json`)
+
 ```json
 {
   "settings": {
-    "debounceMs": 1000,
-    "createBackups": false,
-    "logLevel": "Info",
+    "debounceMs": 500,
+    "logLevel": "Debug",
     "dashboardPort": 5000
   },
-  "mappings": [
-    {
-      "id": "app-script",
-      "source": "C:\\path\\to\\file.js",
-      "destination": "D:\\deploy\\file.js",
-      "enabled": true,
-      "description": "What this file is for"
-    }
-  ],
   "hooks": {
-    "onStartup": {
-      "command": "npm install",
-      "location": "C:\\my-project"
-    },
-    "onUpdate": {
-      "command": "npm run build",
-      "location": "C:\\my-project",
-      "listenTo": "app-script"
-    }
+    "onStartup": [
+      { "command": "echo 'Starting up!'" },
+      { "location": "./scripts", "command": "npm install" }
+    ],
+    "onUpdate": [
+      {
+        "source": "./src/app/bundle.js",
+        "copyTo": "./dist/app.js",
+        "command": "echo 'Bundle updated.'",
+        "location": "./src/app",
+        "description": "Main application javascript bundle"
+      },
+      {
+        "source": "./config/app.env",
+        "command": "systemctl restart my-app",
+        "description": "Restart service when config changes (no file copy needed)"
+      }
+    ]
   }
 }
 ```
-- `debounceMs`: wait time (in ms) after a change before copying. Increase if your editor saves in bursts.
-- `createBackups`: `true` creates timestamped backups of the destination before overwriting.
-- `logLevel`: currently informational only; keep as `Info`.
-- `dashboardPort`: The port for the real-time Web Dashboard UI.
-- Each entry in `mappings`:
-  - `id`: optional unique label used to bind a hook to this specific mapping.
-  - `source`: full path to the file you actively edit.
-  - `destination`: full path that should receive the copy (directories are created if missing).
-  - `enabled`: toggle without deleting the entry.
-  - `description`: optional label that appears in the console log.
-- `hooks` (optional):
-  - `onStartup`: runs once when Filewatcher starts (or after a config reload).
-  - `onUpdate`: runs after each successful copy.
-  - Each hook takes a `command` (required), an optional `location` (working directory; defaults to the current directory), and an optional `listenTo` (mapping `id` to target; omit to fire on every update).
+
+- **`settings`**:
+  - `debounceMs`: Wait time (in ms) after a change before executing actions. Combines rapid sequential saves.
+  - `logLevel`: (Reserved for future filtering)
+  - `dashboardPort`: The TCP port for the real-time Web Dashboard UI.
+
+- **`hooks.onStartup`**: Commands executed once when the application starts or after a config reload.
+  - `command`: The shell command to execute.
+  - `location` (optional): The working directory for the command.
+
+- **`hooks.onUpdate`**: Actions executed after a watched file changes.
+  - `source`: Full or relative path to the file you want to watch.
+  - `copyTo` (optional): Path to copy the source file to on change (directories are created if missing).
+  - `command` (optional): Shell command to run after a change (and after copying, if applicable).
+  - `location` (optional): Working directory for the command.
+  - `enabled` (optional): Toggle to `false` to skip the entry without deleting it (defaults to `true`).
+  - `description` (optional): Label that appears in the console log.
 
 ## Troubleshooting
-- **"Source file not found" warning**: confirm the path and that the file exists before starting Filewatcher.
-- **Nothing copies on change**: verify the mapping is `enabled` and the config was reloaded (`r`).
-- **Permissions issues**: make sure you can write to the destination folder and, if needed, run the console as an administrator.
-- **Need to watch more files**: just add more mappings; Filewatcher creates a single watcher per folder automatically.
-
-That is it—configure once, keep it running, and your files stay in sync.
+- **File not found error on startup**: Ensure `watchconfig.json` exists in your working directory.
+- **"Source file not found" warning**: Confirm the `source` path exists; the app skips invalid entries gracefully.
+- **Nothing happens on change**: Verify the entry is `enabled`, the file path is correct, and reload the config (`r`).
+- **Permissions issues**: Make sure you have write access to the destination folder or permission to execute the configured commands.

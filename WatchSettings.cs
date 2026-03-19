@@ -9,6 +9,6 @@ public sealed record WatchSettings
     /// <summary>Reserved for future log-verbosity filtering; not yet enforced.</summary>
     public string LogLevel { get; set; } = "Info";
 
-    /// <summary>TCP port for the web dashboard. Defaults to 5000 if zero or omitted.</summary>
-    public int DashboardPort { get; set; } = 5000;
+    /// <summary>TCP port for the web dashboard. Defaults to 50022 if zero or omitted.</summary>
+    public int DashboardPort { get; set; } = 5002;
 }

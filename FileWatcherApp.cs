@@ -10,7 +10,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
     : IDisposable
 {
     private static readonly TimeSpan KeyPollInterval = TimeSpan.FromMilliseconds(75);
-    private const int DefaultDashboardPort = 5000;
+    private const int DefaultDashboardPort = 5002;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
