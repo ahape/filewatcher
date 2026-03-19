@@ -46,6 +46,13 @@ internal interface IFileSystemWatcher : System.IDisposable
     /// <summary>Raised when a new file appears in the watched directory.</summary>
     event FileSystemEventHandler? Created;
 
+    /// <summary>
+    /// Raised when a file in the watched directory is renamed. Required to detect saves from
+    /// editors that use "atomic save" (write-temp-then-rename) such as Visual Studio, VS Code,
+    /// JetBrains IDEs, and vim.
+    /// </summary>
+    event RenamedEventHandler? Renamed;
+
     /// <summary>Raised when the internal OS buffer overflows or an error occurs.</summary>
     event ErrorEventHandler? Error;
 

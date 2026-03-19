@@ -25,6 +25,12 @@ internal sealed class PhysicalFileSystemWatcher : IFileSystemWatcher
         remove => _watcher.Created -= value;
     }
 
+    public event RenamedEventHandler? Renamed
+    {
+        add => _watcher.Renamed += value;
+        remove => _watcher.Renamed -= value;
+    }
+
     public event ErrorEventHandler? Error
     {
         add => _watcher.Error += value;

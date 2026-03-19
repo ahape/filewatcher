@@ -124,6 +124,20 @@ internal sealed class FileWatcherApp(
     /// Core event handler for OS-level file system events. Filters spurious/duplicate
     /// events and schedules actions for all matching entries.
     /// </summary>
+    /// <remarks>
+    /// <b>OS quirk — duplicate events:</b> Windows (and some Linux inotify drivers) frequently
+    /// fire multiple <c>Changed</c> events for a single logical save. The method delegates to
+    /// <see cref="TryUpdateAndValidateState"/> to deduplicate them by comparing (Size, LastWriteTime)
+    /// against <see cref="_fileStates"/>.
+    /// <para/>
+    /// <b>OS quirk — atomic/safe save:</b> Editors like Visual Studio, VS Code, and JetBrains
+    /// IDEs use an "atomic save" strategy: write to a temp file, rename the original to a backup,
+    /// then rename the temp to the original filename. The watched file is never <em>modified</em> —
+    /// it is <em>replaced</em> via rename. Without listening for <c>Renamed</c> events, these saves
+    /// would be silently missed. <see cref="RenamedEventArgs"/> extends <see cref="FileSystemEventArgs"/>,
+    /// so the <c>FullPath</c> property gives us the new (target) filename, which is the one we match
+    /// against configured sources.
+    /// </remarks>
     internal void HandleFileEvent(FileSystemEventArgs args)
     {
         LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
@@ -268,6 +282,17 @@ internal sealed class FileWatcherApp(
     /// Instantiates and wires an <see cref="IFileSystemWatcher"/> for
     /// <paramref name="directory"/>, routing events to <see cref="HandleFileEvent"/>.
     /// </summary>
+    /// <remarks>
+    /// Three event types are subscribed:
+    /// <list type="bullet">
+    ///   <item><c>Changed</c> — covers normal in-place writes (e.g., <c>notepad</c>, build tools).</item>
+    ///   <item><c>Created</c> — covers files that are deleted and recreated rather than overwritten.</item>
+    ///   <item><c>Renamed</c> — covers editors that use "atomic save" (write-temp-then-rename),
+    ///         including Visual Studio, VS Code, JetBrains IDEs, and <c>vim</c>. Without this,
+    ///         saves from these editors would be silently missed because the watched file is never
+    ///         modified — it is replaced via an OS rename operation.</item>
+    /// </list>
+    /// </remarks>
     private IFileSystemWatcher CreateWatcher(string directory)
     {
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
@@ -278,6 +303,7 @@ internal sealed class FileWatcherApp(
         watcher.EnableRaisingEvents = true;
         watcher.Changed += (_, e) => HandleFileEvent(e);
         watcher.Created += (_, e) => HandleFileEvent(e);
+        watcher.Renamed += (_, e) => HandleFileEvent(e);
         watcher.Error += (_, e) =>
             LogService.Log(
                 LogLevel.Error,
@@ -314,6 +340,22 @@ internal sealed class FileWatcherApp(
     /// Validates that the file at <paramref name="fullPath"/> actually changed (size or
     /// timestamp) and is non-empty. Updates <see cref="_fileStates"/> on success.
     /// </summary>
+    /// <remarks>
+    /// <b>OS quirk — duplicate/spurious events:</b> Windows commonly fires 2–4 <c>Changed</c>
+    /// events for a single save operation. This method deduplicates them by comparing the current
+    /// (LastWriteTime, Size) tuple against the previously recorded state in <see cref="_fileStates"/>.
+    /// If nothing actually changed, the event is discarded.
+    /// <para/>
+    /// <b>OS quirk — mid-write truncation:</b> Many editors and build tools truncate a file to
+    /// zero bytes before writing new content. The OS fires a <c>Changed</c> event at the zero-byte
+    /// stage. If we acted on it, we would copy an empty file or lint empty source. A zero-byte
+    /// file is almost certainly a transient mid-write state, so we discard it and wait for the
+    /// next event that carries the real content.
+    /// <para/>
+    /// <b>OS quirk — locked files:</b> The file may be locked by the writing process at the
+    /// moment we try to read its metadata. Rather than crashing, we silently return <c>false</c>
+    /// and let the next OS event retry.
+    /// </remarks>
     private bool TryUpdateAndValidateState(string fullPath)
     {
         try

@@ -60,6 +60,7 @@ internal class FakeFileSystemWatcher : IFileSystemWatcher
 
     public event FileSystemEventHandler? Changed;
     public event FileSystemEventHandler? Created;
+    public event RenamedEventHandler? Renamed;
     public event ErrorEventHandler? Error;
 
     public FakeFileSystemWatcher(string directory, NotifyFilters filters)
