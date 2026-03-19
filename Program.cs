@@ -145,7 +145,12 @@ internal sealed class FileWatcherApp : IDisposable
         SetupWatchers();
         TriggerInitialCopies(immediate: true);
         await RunStartupHookAsync(token);
-        PrintWelcome();
+
+        // Start web dashboard
+        var port = _config.Settings.DashboardPort > 0 ? _config.Settings.DashboardPort : 5000;
+        _ = LogWebServer.StartAsync(port, token);
+
+        PrintWelcome(port);
         await RunConsoleLoopAsync(token);
     }
 
@@ -491,8 +496,8 @@ internal sealed class FileWatcherApp : IDisposable
             var exitCode = await _processRunner.RunAsync(
                 hook.Command,
                 workingDirectory,
-                line => Console.WriteLine(line),
-                line => Console.Error.WriteLine(line),
+                line => LogService.Log(LogLevel.Info, $"[Hook] {line}"),
+                line => LogService.Log(LogLevel.Error, $"[Hook Error] {line}"),
                 token);
 
             if (exitCode != 0)
@@ -512,68 +517,44 @@ internal sealed class FileWatcherApp : IDisposable
 
     internal void ShowStatus()
     {
-        WriteInfo($"\n=== Status at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
-        Console.WriteLine($"Active watchers: {_directoryWatchers.Count}");
-        Console.WriteLine($"Enabled mappings: {_directoryMappings.Values.Sum(list => list.Count)}");
-        Console.WriteLine($"Pending copies: {_pendingCopyTokens.Count}");
+        LogService.Log(LogLevel.Info, $"\n=== Status at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+        LogService.Log(LogLevel.Info, $"Active watchers: {_directoryWatchers.Count}");
+        LogService.Log(LogLevel.Info, $"Enabled mappings: {_directoryMappings.Values.Sum(list => list.Count)}");
+        LogService.Log(LogLevel.Info, $"Pending copies: {_pendingCopyTokens.Count}");
 
         if (_pendingCopyTokens.Count > 0)
         {
-            Console.WriteLine("Pending destinations:");
+            LogService.Log(LogLevel.Info, "Pending destinations:");
             foreach (var destination in _pendingCopyTokens.Keys)
             {
-                Console.WriteLine($"  - {destination}");
+                LogService.Log(LogLevel.Info, $"  - {destination}");
             }
         }
     }
 
-    internal void PrintWelcome()
+    internal void PrintWelcome(int port)
     {
-        Console.WriteLine();
-        WriteSuccess($"Monitoring {_directoryMappings.Values.Sum(list => list.Count)} enabled mapping(s).");
-        Console.WriteLine("Press 'r' to reload config, 'q' to quit, any other key for status.");
+        LogService.Log(LogLevel.Info, "");
+        LogService.Log(LogLevel.Success, $"Monitoring {_directoryMappings.Values.Sum(list => list.Count)} enabled mapping(s).");
+        LogService.Log(LogLevel.Info, $"Dashboard available at http://localhost:{port}");
+        LogService.Log(LogLevel.Info, "Press 'r' to reload config, 'q' to quit, any other key for status.");
     }
 
     internal static void WriteCopySummary(FileMapping mapping)
     {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"\n✓ Copied {Path.GetFileName(mapping.Source)} at {DateTime.Now:HH:mm:ss}");
-        Console.ResetColor();
+        LogService.Log(LogLevel.Copy, $"✓ Copied {Path.GetFileName(mapping.Source)} at {DateTime.Now:HH:mm:ss}");
         if (!string.IsNullOrWhiteSpace(mapping.Description))
         {
-            Console.WriteLine($"  Description: {mapping.Description}");
+            LogService.Log(LogLevel.Info, $"  Description: {mapping.Description}");
         }
-        Console.WriteLine($"  From: {mapping.Source}");
-        Console.WriteLine($"  To:   {mapping.Destination}");
+        LogService.Log(LogLevel.Info, $"  From: {mapping.Source}");
+        LogService.Log(LogLevel.Info, $"  To:   {mapping.Destination}");
     }
 
-    private static void WriteWarning(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    private static void WriteError(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    private static void WriteInfo(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    private static void WriteSuccess(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
+    private static void WriteWarning(string message) => LogService.Log(LogLevel.Warning, message);
+    private static void WriteError(string message) => LogService.Log(LogLevel.Error, message);
+    private static void WriteInfo(string message) => LogService.Log(LogLevel.Info, message);
+    private static void WriteSuccess(string message) => LogService.Log(LogLevel.Success, message);
 
     private void DisposeWatchers()
     {
@@ -625,7 +606,8 @@ public sealed record class WatchConfig
         {
             DebounceMs = 1000,
             CreateBackups = false,
-            LogLevel = "Info"
+            LogLevel = "Info",
+            DashboardPort = 5000
         },
         Mappings = new List<FileMapping>
         {
@@ -675,6 +657,9 @@ public sealed record class WatchSettings
 
     [JsonPropertyName("logLevel")]
     public string LogLevel { get; set; } = "Info";
+
+    [JsonPropertyName("dashboardPort")]
+    public int DashboardPort { get; set; } = 5000;
 }
 
 public sealed record class WatchHooks
