@@ -41,6 +41,9 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         set => _config = value;
     }
 
+    /// <summary>
+    /// Orchestrates the entire application lifecycle: loading configuration, setting up watchers, running startup hooks, starting the web server, and entering the console command loop.
+    /// </summary>
     public async Task RunAsync(CancellationToken token)
     {
         await LoadConfigurationAsync(token);
@@ -55,6 +58,17 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
 
         PrintWelcome(port);
         await RunConsoleLoopAsync(token);
+    }
+
+    private void LogDebug(string message)
+    {
+        if (
+            string.Equals(_config.Settings.LogLevel, "Debug", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_config.Settings.LogLevel, "Trace", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            LogService.Log(LogLevel.Debug, message);
+        }
     }
 
     private async Task RunConsoleLoopAsync(CancellationToken token)
@@ -109,6 +123,9 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         _config.Hooks ??= new WatchHooks();
     }
 
+    /// <summary>
+    /// Translates config entries into FileSystemWatchers, grouping multiple monitored files by their parent directory to minimize OS handles.
+    /// </summary>
     internal void SetupWatchers()
     {
         DisposeWatchers();
@@ -137,15 +154,18 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             }
             list.Add(entry);
             _directoryWatchers.GetOrAdd(directory, CreateWatcher);
+            LogDebug($"Mapped entry '{entry.Source}' (Enabled)");
         }
         _directoryEntries = new ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>>(
             grouped.ToDictionary(g => g.Key, g => (IReadOnlyList<UpdateEntry>)g.Value.AsReadOnly()),
             StringComparer.OrdinalIgnoreCase
         );
+        LogDebug($"SetupWatchers completed with {_directoryWatchers.Count} active watchers");
     }
 
     private FileSystemWatcher CreateWatcher(string directory)
     {
+        LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
         var watcher = new FileSystemWatcher(directory)
         {
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
@@ -161,8 +181,15 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         return watcher;
     }
 
+    /// <summary>
+    /// Core event handler for OS-level file system events.
+    /// It acts as a shield against rapid, duplicate, or spurious events emitted by the OS or other processes
+    /// (such as our own File.Copy operations) by explicitly checking if the LastWriteTime or Size actually changed.
+    /// </summary>
     internal void HandleFileEvent(FileSystemEventArgs args)
     {
+        LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
+
         var directory = Path.GetDirectoryName(args.FullPath);
         if (directory == null || !_directoryEntries.TryGetValue(directory, out var entries))
             return;
@@ -171,7 +198,10 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
             string.Equals(e.Source, args.FullPath, StringComparison.OrdinalIgnoreCase)
         );
         if (entry == null)
+        {
+            LogDebug($"Ignoring {args.FullPath} (Not mapped to an active source)");
             return;
+        }
 
         try
         {
@@ -184,9 +214,15 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                 _fileStates.TryGetValue(args.FullPath, out var previousState)
                 && previousState == currentState
             )
+            {
+                LogDebug($"Ignoring {args.FullPath} (No size/timestamp change since last event)");
                 return;
+            }
 
             _fileStates[args.FullPath] = currentState;
+            LogDebug(
+                $"Updated tracked state for {args.FullPath} -> Size: {currentState.Length}, Time: {currentState.Item1}"
+            );
         }
         catch (Exception)
         {
@@ -196,10 +232,16 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         ScheduleActions(entry);
     }
 
+    /// <summary>
+    /// Debounces and queues the actual work (copying/command execution).
+    /// A new event always cancels a pending operation for the same file, resetting the debounce timer.
+    /// </summary>
     internal void ScheduleActions(UpdateEntry entry)
     {
+        LogDebug($"Scheduling actions for {entry.Source}");
         if (_pendingTokens.TryRemove(entry.Source, out var existing))
         {
+            LogDebug($"Cancelling previous pending actions for {entry.Source}");
             existing.Cancel();
             existing.Dispose();
         }
@@ -210,9 +252,14 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
         {
             try
             {
-                await Task.Delay(Math.Max(0, _config.Settings.DebounceMs), cts.Token);
+                var delay = Math.Max(0, _config.Settings.DebounceMs);
+                LogDebug($"Delaying {delay}ms for {entry.Source}");
+                await Task.Delay(delay, cts.Token);
+
+                LogDebug($"Debounce complete, executing actions for {entry.Source}");
                 if (entry.CopyTo != null)
                 {
+                    LogDebug($"Copying {entry.Source} to {entry.CopyTo}");
                     var destDir = Path.GetDirectoryName(entry.CopyTo);
                     if (!string.IsNullOrEmpty(destDir))
                         Directory.CreateDirectory(destDir);
@@ -224,10 +271,14 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                 }
                 if (!string.IsNullOrWhiteSpace(entry.Command))
                 {
+                    LogDebug($"Running command: {entry.Command}");
                     await RunHookAsync(entry.Command, entry.Location, cts.Token);
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                LogDebug($"Action cancelled for {entry.Source}");
+            }
             catch (Exception ex)
             {
                 LogService.Log(LogLevel.Error, $"Error processing {entry.Source}: {ex.Message}");
@@ -238,6 +289,7 @@ internal sealed class FileWatcherApp(string configPath, IProcessRunner? processR
                     new KeyValuePair<string, CancellationTokenSource>(entry.Source, cts)
                 );
                 cts.Dispose();
+                LogDebug($"Completed actions for {entry.Source} and cleaned up token");
             }
         });
     }

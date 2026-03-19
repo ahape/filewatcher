@@ -30,6 +30,7 @@ public static class LogService
         var oldColor = Console.ForegroundColor;
         Console.ForegroundColor = level switch
         {
+            LogLevel.Debug => ConsoleColor.DarkGray,
             LogLevel.Info => ConsoleColor.Cyan,
             LogLevel.Success or LogLevel.Copy => ConsoleColor.Green,
             LogLevel.Warning => ConsoleColor.Yellow,

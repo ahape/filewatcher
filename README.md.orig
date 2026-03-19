@@ -8,7 +8,6 @@ Filewatcher is a simple, agnostic file system watcher that triggers actions on f
 - Run arbitrary commands (e.g., `npm run build`, `systemctl restart service`) whenever specific files change.
 - Simple console UI: press `r` to reload the config, `q` to quit, anything else for a status snapshot.
 - **Web Dashboard**: View real-time logs in your browser via a built-in lightweight web server.
-- **Smart Event Handling**: Automatically ignores duplicate, OS-level "spurious" events by comparing exact file sizes and modification timestamps.
 
 ## Requirements
 - [.NET SDK 10.0+](https://dotnet.microsoft.com/download)

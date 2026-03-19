@@ -114,6 +114,55 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
+    public async Task HandleFileEvent_SpuriousEvent_SameState_DoesNotScheduleActions()
+    {
+        var src = WriteFile("spurious.txt", "same content");
+        var app = CreateApp(
+            WriteCfg(
+                new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }
+            )
+        );
+        await app.LoadConfigurationAsync(default);
+        app.SetupWatchers();
+
+        // First event: processes and schedules actions
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "spurious.txt"));
+        Assert.Single(app._pendingTokens);
+
+        // Clear the pending tokens to act like the action finished
+        app._pendingTokens.Clear();
+
+        // Second event: same exact file size and write time. Should be ignored.
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "spurious.txt"));
+        Assert.Empty(app._pendingTokens);
+    }
+
+    [Fact]
+    public async Task HandleFileEvent_SpuriousEvent_FileChanged_SchedulesActions()
+    {
+        var src = WriteFile("modified.txt", "content 1");
+        var app = CreateApp(
+            WriteCfg(
+                new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }
+            )
+        );
+        await app.LoadConfigurationAsync(default);
+        app.SetupWatchers();
+
+        // First event
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "modified.txt"));
+        Assert.Single(app._pendingTokens);
+        app._pendingTokens.Clear();
+
+        // Modify the file to change its state (size/timestamp)
+        File.WriteAllText(src, "new content");
+
+        // Second event: file actually changed, should process
+        app.HandleFileEvent(new(WatcherChangeTypes.Changed, _tempDir, "modified.txt"));
+        Assert.Single(app._pendingTokens);
+    }
+
+    [Fact]
     public async Task ScheduleActions_CopiesFile()
     {
         var src = WriteFile("s.txt", "content");

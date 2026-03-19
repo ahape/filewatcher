@@ -1,0 +1,45 @@
+--- FileWatcherApp.cs
++++ FileWatcherApp.cs
+@@ -40,6 +40,9 @@
+         set => _config = value;
+     }
+ 
++    /// <summary>
++    /// Orchestrates the entire application lifecycle: loading configuration, setting up watchers, running startup hooks, starting the web server, and entering the console command loop.
++    /// </summary>
+     public async Task RunAsync(CancellationToken token)
+     {
+         await LoadConfigurationAsync(token);
+@@ -107,6 +110,9 @@
+         _config.Hooks ??= new WatchHooks();
+     }
+ 
++    /// <summary>
++    /// Translates config entries into FileSystemWatchers, grouping multiple monitored files by their parent directory to minimize OS handles.
++    /// </summary>
+     internal void SetupWatchers()
+     {
+         DisposeWatchers();
+@@ -155,6 +161,12 @@
+         return watcher;
+     }
+ 
++    /// <summary>
++    /// Core event handler for OS-level file system events. 
++    /// It acts as a shield against rapid, duplicate, or spurious events emitted by the OS or other processes
++    /// (such as our own File.Copy operations) by explicitly checking if the LastWriteTime or Size actually changed.
++    /// </summary>
+     internal void HandleFileEvent(FileSystemEventArgs args)
+     {
+         LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
+@@ -194,6 +206,10 @@
+         ScheduleActions(entry);
+     }
+ 
++    /// <summary>
++    /// Debounces and queues the actual work (copying/command execution). 
++    /// A new event always cancels a pending operation for the same file, resetting the debounce timer.
++    /// </summary>
+     internal void ScheduleActions(UpdateEntry entry)
+     {
+         LogDebug($"Scheduling actions for {entry.Source}");

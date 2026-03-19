@@ -27,25 +27,26 @@
       font-family: "JetBrains Mono", "Fira Code", monospace;
       font-size: .9rem;
       line-height: 1.4;
-      overflow-wrap: break-word;
       max-height: 80vh;
       overflow-y: auto;
     }
     .log-entry { margin-bottom: 4px; border-radius: 4px; padding: 2px 8px; }
-    .timestamp { color: #666; margin-right: 10px; user-select: none; }
+    .timestamp { color: #666; margin-right: 10px; user-select: none; white-space: nowrap; }
     .level {
       font-weight: bold;
       margin-right: 10px;
       text-transform: uppercase;
       display: inline-block;
       width: 60px;
+      white-space: nowrap;
     }
+    .level-debug   { color: #888; }
     .level-info    { color: #00bcd4; }
     .level-success { color: #4caf50; }
     .level-warning { color: #ffeb3b; }
     .level-error   { color: #f44336; }
     .level-copy    { color: #4caf50; }
-    .message { color: #eee; }
+    .message { color: #eee; word-break: normal; overflow-wrap: anywhere; }
     .status { font-size: .8rem; background: #333; padding: 4px 8px; border-radius: 4px; }
     .status-online  { color: #4caf50; }
     .status-offline { color: #f44336; }
