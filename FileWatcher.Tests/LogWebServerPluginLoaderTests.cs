@@ -7,7 +7,9 @@ public sealed class LogWebServerPluginLoaderTests
     [Fact]
     public void Load_MissingPlugin_ReturnsDisabledServer()
     {
-        ILogWebServer server = LogWebServerPluginLoader.Load(pluginPath: "/missing/FileWatcher.Web.dll");
+        ILogWebServer server = LogWebServerPluginLoader.Load(
+            pluginPath: "/missing/FileWatcher.Web.dll"
+        );
         Assert.False(server.IsEnabled);
     }
 

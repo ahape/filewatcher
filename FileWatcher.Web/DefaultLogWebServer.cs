@@ -121,13 +121,15 @@ public sealed class DefaultLogWebServer : ILogWebServer
             _ => "text/html; charset=utf-8",
         };
 
-    private static readonly IReadOnlyDictionary<string, string> s_assetNames =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["index.html"] = "FileWatcher.Web.wwwroot.index.html",
-            ["styles.css"] = "FileWatcher.Web.wwwroot.styles.css",
-            ["dashboard.js"] = "FileWatcher.Web.wwwroot.dashboard.js",
-        };
+    private static readonly IReadOnlyDictionary<string, string> s_assetNames = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["index.html"] = "FileWatcher.Web.wwwroot.index.html",
+        ["styles.css"] = "FileWatcher.Web.wwwroot.styles.css",
+        ["dashboard.js"] = "FileWatcher.Web.wwwroot.dashboard.js",
+    };
 
     private static readonly JsonSerializerOptions s_streamJsonOptions = new()
     {

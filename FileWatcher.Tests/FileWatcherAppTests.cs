@@ -350,10 +350,7 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task RunHookAsync_Exception_LogsError()
     {
-        var r = new FakeProcessRunner
-        {
-            ShouldThrow = true
-        };
+        var r = new FakeProcessRunner { ShouldThrow = true };
         var app = CreateApp("/cfg.json", r);
         await app.RunHookAsync("cmd", "/tmp", LogLevel.Info, "", default);
         var logs = LogService.GetRecentLogs().ToList();
