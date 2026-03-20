@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\FileWatcher\FileWatcher.csproj" />
+    <EmbeddedResource Include="wwwroot\index.html" LogicalName="FileWatcher.Web.wwwroot.index.html" />
+    <EmbeddedResource Include="wwwroot\styles.css" LogicalName="FileWatcher.Web.wwwroot.styles.css" />
+    <EmbeddedResource Include="wwwroot\dashboard.js" LogicalName="FileWatcher.Web.wwwroot.dashboard.js" />
+  </ItemGroup>
+</Project>

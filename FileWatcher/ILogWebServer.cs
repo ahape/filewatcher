@@ -4,11 +4,14 @@ using System.Threading.Tasks;
 namespace FileWatcher;
 
 /// <summary>
-/// Abstracts the embedded web server so that the dashboard can be verified in tests
-/// without binding a real TCP port.
+/// Abstracts the optional web dashboard so the core watcher can run with or without
+/// a concrete web-server plugin.
 /// </summary>
-internal interface ILogWebServer
+public interface ILogWebServer
 {
+    /// <summary>Indicates whether this implementation actually exposes a dashboard.</summary>
+    bool IsEnabled { get; }
+
     /// <summary>
     /// Starts listening on <paramref name="port"/> and serves the log dashboard until
     /// <paramref name="token"/> is cancelled.

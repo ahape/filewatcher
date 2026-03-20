@@ -31,12 +31,10 @@ internal sealed class FileWatcherApp(
         await LoadConfigurationAsync(token);
         SetupWatchers();
 
-        int port =
-            Config.Settings.DashboardPort > 0
-                ? Config.Settings.DashboardPort
-                : DefaultDashboardPort;
-        _ = _webServer.StartAsync(port, token);
-        PrintWelcome(port);
+        int port = GetDashboardPort();
+        if (_webServer.IsEnabled)
+            _ = _webServer.StartAsync(port, token);
+        PrintWelcome(_webServer.IsEnabled, port);
 
         await Task.WhenAll(RunStartupHooksAsync(token), RunConsoleLoopAsync(token));
     }
@@ -232,7 +230,7 @@ internal sealed class FileWatcherApp(
     private readonly string _configPath = configPath;
     private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
     private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
-    private readonly ILogWebServer _webServer = webServer ?? new DefaultLogWebServer();
+    private readonly ILogWebServer _webServer = webServer ?? new NullLogWebServer();
     private readonly IConsole _console = console ?? new SystemConsole();
     private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
         StringComparer.OrdinalIgnoreCase
@@ -481,10 +479,13 @@ internal sealed class FileWatcherApp(
         _directoryWatchers.Clear();
     }
 
-    /// <summary>Logs the startup banner with the dashboard URL and available key commands.</summary>
-    internal static void PrintWelcome(int port)
+    /// <summary>Logs the startup banner with the dashboard state and available key commands.</summary>
+    internal static void PrintWelcome(bool webServerEnabled, int port)
     {
-        LogService.Log(LogLevel.Success, $"Monitoring started. Dashboard: http://localhost:{port}");
+        string message = webServerEnabled
+            ? $"Monitoring started. Dashboard: http://localhost:{port}"
+            : "Monitoring started. Web dashboard disabled.";
+        LogService.Log(LogLevel.Success, message);
         LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
     }
 
@@ -506,6 +507,9 @@ internal sealed class FileWatcherApp(
     /// </summary>
     private static string EntryKey(UpdateEntry entry) =>
         $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
+
+    private int GetDashboardPort() =>
+        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : DefaultDashboardPort;
 
     private static string EntryLabel(UpdateEntry entry) =>
         string.IsNullOrWhiteSpace(entry.Description)

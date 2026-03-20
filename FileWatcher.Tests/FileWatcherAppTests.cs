@@ -235,6 +235,26 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_WithoutWebServer_PrintsDisabledMessage()
+    {
+        var app = new FileWatcherApp(
+            WriteCfg(new WatchConfig()),
+            processRunner: new FakeProcessRunner(),
+            fileSystem: _fs,
+            console: _console
+        );
+        _console.EnqueueKey('q', ConsoleKey.Q);
+
+        try
+        {
+            await app.RunAsync(default);
+        }
+        catch (OperationCanceledException) { }
+
+        Assert.Contains("Web dashboard disabled", _out.ToString());
+    }
+
+    [Fact]
     public async Task RunConsoleLoopAsync_R_ReloadsConfiguration()
     {
         var p = WriteCfg(new() { Settings = new() { DebounceMs = 1 } });

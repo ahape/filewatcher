@@ -13,8 +13,9 @@ internal static class Program
     private const string ConfigFileName = "watchconfig.json";
     private static readonly CancellationTokenSource s_shutdownTokenSource = new();
 
-    private static async Task Main()
+    private static async Task Main(string[] args)
     {
+        ProgramOptions options = ProgramOptions.Parse(args);
         Console.CancelKeyPress += (_, args) =>
         {
             args.Cancel = true;
@@ -23,7 +24,10 @@ internal static class Program
 
         try
         {
-            using var app = new FileWatcherApp(ConfigFileName);
+            using var app = new FileWatcherApp(
+                ConfigFileName,
+                webServer: LogWebServerPluginLoader.Load(options.DisableWeb)
+            );
             await app.RunAsync(s_shutdownTokenSource.Token);
         }
         catch (OperationCanceledException) { }

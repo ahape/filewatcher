@@ -23,6 +23,7 @@ public class LogWebServerTests : IDisposable
     [Fact]
     public async Task WebServer_ServesDashboardAndLogs()
     {
+        LogService.Clear();
         var originalOut = Console.Out;
         Console.SetOut(TextWriter.Null);
         try

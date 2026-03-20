@@ -14,5 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FileWatcher\FileWatcher.csproj" />
+    <ProjectReference Include="..\FileWatcher.Web\FileWatcher.Web.csproj" />
   </ItemGroup>
 </Project>
