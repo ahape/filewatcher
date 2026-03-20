@@ -72,9 +72,9 @@ public class PhysicalFileSystemTests : IDisposable
     {
         var path = Path.Combine(_testDir, "info.txt");
         File.WriteAllText(path, "12345"); // 5 bytes
-        var info = _fs.GetFileInfo(path);
-        Assert.Equal(5, info.Length);
-        Assert.NotEqual(default, info.LastWriteTimeUtc);
+        var (LastWriteTimeUtc, Length) = _fs.GetFileInfo(path);
+        Assert.Equal(5, Length);
+        Assert.NotEqual(default, LastWriteTimeUtc);
     }
 
     [Fact]
@@ -128,8 +128,8 @@ public class PhysicalFileSystemTests : IDisposable
     public void PhysicalFileSystemWatcher_RemoveEvents_Works()
     {
         using var watcher = _fs.CreateWatcher(_testDir, NotifyFilters.FileName);
-        FileSystemEventHandler h1 = (s, e) => { };
-        ErrorEventHandler h2 = (s, e) => { };
+        static void h1(object s, FileSystemEventArgs e) { }
+        static void h2(object s, ErrorEventArgs e) { }
 
         watcher.Changed += h1;
         watcher.Changed -= h1;

@@ -5,8 +5,8 @@ namespace FileWatcher;
 
 /// <summary>
 /// Production implementation of <see cref="IFileSystem"/> that delegates directly to
-/// <see cref="System.IO.File"/>, <see cref="System.IO.Directory"/>, and
-/// <see cref="System.IO.FileInfo"/>.
+/// <see cref="File"/>, <see cref="Directory"/>, and
+/// <see cref="FileInfo"/>.
 /// </summary>
 internal sealed class PhysicalFileSystem : IFileSystem
 {

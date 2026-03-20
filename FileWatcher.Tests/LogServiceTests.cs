@@ -1,3 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Xunit;
+
 namespace FileWatcher.Tests;
 
 /// <summary>
@@ -130,7 +136,7 @@ public sealed class LogServiceTests : IDisposable
     public void Log_AfterUnsubscribe_DoesNotRaiseEventToRemovedHandler()
     {
         var callCount = 0;
-        Action<LogEntry> handler = _ => callCount++;
+        void handler(LogEntry _) => callCount++;
         LogService.OnLog += handler;
         LogService.OnLog -= handler;
 

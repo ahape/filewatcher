@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -170,7 +173,7 @@ public sealed class FileWatcherAppTests : IDisposable
         // The pending token is removed in the finally block of the Task.Run inside ScheduleActions.
         // Polling for its removal is more reliable than an arbitrary fixed delay.
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (app._pendingTokens.Any() && DateTime.UtcNow < deadline)
+        while (!app._pendingTokens.IsEmpty && DateTime.UtcNow < deadline)
             await Task.Delay(10);
 
         Assert.True(_fs.FileExists(dst));
@@ -327,8 +330,10 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task RunHookAsync_Exception_LogsError()
     {
-        var r = new FakeProcessRunner();
-        r.ShouldThrow = true;
+        var r = new FakeProcessRunner
+        {
+            ShouldThrow = true
+        };
         var app = CreateApp("/cfg.json", r);
         await app.RunHookAsync("cmd", "/tmp", LogLevel.Info, "", default);
         var logs = LogService.GetRecentLogs().ToList();

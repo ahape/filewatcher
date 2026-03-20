@@ -4,7 +4,7 @@ namespace FileWatcher;
 
 /// <summary>
 /// Production implementation of <see cref="IConsole"/> that delegates to the
-/// <see cref="System.Console"/> static API.
+/// <see cref="Console"/> static API.
 /// </summary>
 internal sealed class SystemConsole : IConsole
 {

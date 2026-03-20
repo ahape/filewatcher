@@ -204,8 +204,10 @@ internal sealed class FileWatcherApp(
             int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
-                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
-                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
+                silent ? _ => { }
+            : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
+                silent ? _ => { }
+            : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
                 token
             );
             if (exitCode != 0 && !silent)
@@ -372,7 +374,7 @@ internal sealed class FileWatcherApp(
 
             _fileStates[fullPath] = currentState;
             LogDebug(
-                $"Updated tracked state for {fullPath} -> Size: {currentState.Length}, Time: {currentState.Item1}"
+                $"Updated tracked state for {fullPath} -> Size: {currentState.Length}, Time: {currentState.LastWriteTimeUtc}"
             );
 
             if (currentState.Length == 0)

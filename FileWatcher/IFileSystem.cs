@@ -35,10 +35,10 @@ internal interface IFileSystem
 }
 
 /// <summary>
-/// Abstracts <see cref="System.IO.FileSystemWatcher"/> so that the event pipeline can be
+/// Abstracts <see cref="FileSystemWatcher"/> so that the event pipeline can be
 /// exercised in tests without requiring real OS file events.
 /// </summary>
-internal interface IFileSystemWatcher : System.IDisposable
+internal interface IFileSystemWatcher : IDisposable
 {
     /// <summary>Raised when a watched file is modified.</summary>
     event FileSystemEventHandler? Changed;

@@ -11,7 +11,7 @@ internal class FakeFileSystem : IFileSystem
     public HashSet<string> Directories { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, (DateTime LastWriteTimeUtc, long Length)> FileStates { get; } =
         new(StringComparer.OrdinalIgnoreCase);
-    public List<FakeFileSystemWatcher> Watchers { get; } = new();
+    public List<FakeFileSystemWatcher> Watchers { get; } = [];
 
     public bool FileExists(string path) => Files.ContainsKey(path);
 
@@ -24,9 +24,9 @@ internal class FakeFileSystem : IFileSystem
 
     public void CopyFile(string source, string dest, bool overwrite)
     {
-        if (!Files.ContainsKey(source))
+        if (!Files.TryGetValue(source, out string? value))
             throw new FileNotFoundException();
-        Files[dest] = Files[source];
+        Files[dest] = value;
     }
 
     public void CreateDirectory(string path) => Directories.Add(path);
@@ -52,22 +52,16 @@ internal class FakeFileSystem : IFileSystem
     }
 }
 
-internal class FakeFileSystemWatcher : IFileSystemWatcher
+internal class FakeFileSystemWatcher(string directory, NotifyFilters filters) : IFileSystemWatcher
 {
-    public string Directory { get; }
-    public NotifyFilters Filters { get; }
+    public string Directory { get; } = directory;
+    public NotifyFilters Filters { get; } = filters;
     public bool EnableRaisingEvents { get; set; }
 
     public event FileSystemEventHandler? Changed;
     public event FileSystemEventHandler? Created;
     public event RenamedEventHandler? Renamed;
     public event ErrorEventHandler? Error;
-
-    public FakeFileSystemWatcher(string directory, NotifyFilters filters)
-    {
-        Directory = directory;
-        Filters = filters;
-    }
 
     public void TriggerChanged(string path) =>
         Changed?.Invoke(

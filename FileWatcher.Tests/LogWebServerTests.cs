@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,7 +61,7 @@ public class LogWebServerTests : IDisposable
                 LogService.Log(LogLevel.Info, "streamed log event");
 
                 using var stream = await streamResponse.Content.ReadAsStreamAsync(streamCts.Token);
-                using var reader = new System.IO.StreamReader(stream);
+                using var reader = new StreamReader(stream);
 
                 string? line;
                 while ((line = await reader.ReadLineAsync(streamCts.Token)) != null)

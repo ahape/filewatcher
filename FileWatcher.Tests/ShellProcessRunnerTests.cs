@@ -1,3 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using Xunit;
+
 namespace FileWatcher.Tests;
 
 /// <summary>
@@ -51,7 +58,7 @@ public sealed class ShellProcessRunnerTests : IDisposable
         await Runner.RunAsync(
             StdoutCommand("hello-stdout"),
             Environment.CurrentDirectory,
-            line => received.Add(line),
+            received.Add,
             _ => { },
             cts.Token
         );
@@ -69,7 +76,7 @@ public sealed class ShellProcessRunnerTests : IDisposable
             StderrCommand("hello-stderr"),
             Environment.CurrentDirectory,
             _ => { },
-            line => received.Add(line),
+            received.Add,
             cts.Token
         );
 

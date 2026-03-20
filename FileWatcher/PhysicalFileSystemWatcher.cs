@@ -3,7 +3,7 @@ using System.IO;
 namespace FileWatcher;
 
 /// <summary>
-/// Thin adapter that wraps a <see cref="System.IO.FileSystemWatcher"/> and exposes it
+/// Thin adapter that wraps a <see cref="FileSystemWatcher"/> and exposes it
 /// through the <see cref="IFileSystemWatcher"/> interface.
 /// </summary>
 internal sealed class PhysicalFileSystemWatcher : IFileSystemWatcher
