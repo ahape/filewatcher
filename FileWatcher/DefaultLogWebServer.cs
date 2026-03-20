@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -48,11 +49,15 @@ internal sealed class DefaultLogWebServer : ILogWebServer
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
         b.WebHost.ConfigureKestrel(o => o.ListenAnyIP(port));
-        b.Environment.WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         WebApplication app = b.Build();
         app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
+        string wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        if (Directory.Exists(wwwroot))
+        {
+            var fileProvider = new PhysicalFileProvider(wwwroot);
+            app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+            app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+        }
         return app;
     }
 

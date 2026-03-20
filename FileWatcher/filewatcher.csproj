@@ -20,8 +20,10 @@
     <ItemGroup>
       <WwwRootFiles Include="$(WwwRootDir)\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(WwwRootFiles)"
-          DestinationFiles="@(WwwRootFiles->'$(OutputPath)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="@(WwwRootFiles)"
+      DestinationFiles="@(WwwRootFiles->'$(OutputPath)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+    />
   </Target>
 </Project>
