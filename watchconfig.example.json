@@ -10,6 +10,11 @@
         "location": "c:\\Users\\AlanHape\\source\\repos\\Azurite\\",
         "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./run.ps1",
         "logLevel": "None"
+      },
+      {
+        "name": "IIS Express",
+        "command": "powershell -ExecutionPolicy Bypass -NoProfile -File ./start-iis.ps1",
+        "logLevel": "Info"
       }
     ],
     "onUpdate": [

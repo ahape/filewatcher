@@ -171,10 +171,11 @@ internal sealed class FileWatcherApp(
     }
 
     /// <summary>Runs every <see cref="StartupEntry"/> command in order, awaiting each in turn.</summary>
-    internal async Task RunStartupHooksAsync(CancellationToken token)
+    internal Task RunStartupHooksAsync(CancellationToken token)
     {
         foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
-            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
+            RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
+        return Task.Delay(1); // TODO -- some tasks don't ever finish (like OTHER watchers)
     }
 
     /// <summary>
