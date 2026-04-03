@@ -8,12 +8,12 @@
     "onStartup": [
       {
         "location": "c:\\Users\\AlanHape\\source\\repos\\Azurite\\",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./run.ps1",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Run-Azurite.ps1",
         "logLevel": "None"
       },
       {
         "name": "IIS Express",
-        "command": "powershell -ExecutionPolicy Bypass -NoProfile -File ./start-iis.ps1",
+        "command": "powershell -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1",
         "logLevel": "Info"
       }
     ],
@@ -32,3 +32,4 @@
     ]
   }
 }
+
