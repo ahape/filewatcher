@@ -6,3 +6,4 @@ coverage/
 TestResults/
 .tools/
 WebFrontEnd/wwwroot/
+.worktree/

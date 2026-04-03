@@ -170,12 +170,31 @@ internal sealed class FileWatcherApp(
         _ = Task.Run(() => ExecuteEntryActionsAsync(entry, key, label, cts));
     }
 
-    /// <summary>Runs every <see cref="StartupEntry"/> command in order, awaiting each in turn.</summary>
+    /// <summary>
+    /// Runs all startup hooks (fire-and-forget for long-running watchers).
+    /// Returns a task that completes when the token is cancelled.
+    /// </summary>
     internal Task RunStartupHooksAsync(CancellationToken token)
     {
-        foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
-            RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
-        return Task.Delay(1); // TODO -- some tasks don't ever finish (like OTHER watchers)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
+                    await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                LogService.Log(LogLevel.Error, $"Startup hooks failed: {ex.Message}");
+            }
+            finally
+            {
+                _startupHooksCompleted.TrySetResult();
+            }
+        }, token);
+
+        return _startupHooksCompleted.Task.WaitAsync(token);
     }
 
     /// <summary>
@@ -231,6 +250,7 @@ internal sealed class FileWatcherApp(
     private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
     private readonly ILogWebServer _webServer = webServer ?? new NullLogWebServer();
     private readonly IConsole _console = console ?? new SystemConsole();
+    private readonly TaskCompletionSource _startupHooksCompleted = new();
     private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
         StringComparer.OrdinalIgnoreCase
     );
