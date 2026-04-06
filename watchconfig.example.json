@@ -2,18 +2,19 @@
   "$schema": "./watchconfig.schema.json",
   "settings": {
     "debounceMs": 1000,
-    "logLevel": "Debug"
+    "logLevel": "Info"
   },
   "hooks": {
     "onStartup": [
       {
+        "name": "Azurite",
         "location": "c:\\Users\\AlanHape\\source\\repos\\Azurite\\",
         "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Run-Azurite.ps1",
         "logLevel": "None"
       },
       {
         "name": "IIS Express",
-        "command": "powershell -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1",
         "logLevel": "Info"
       }
     ],

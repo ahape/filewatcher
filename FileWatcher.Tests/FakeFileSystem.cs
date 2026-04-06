@@ -60,7 +60,9 @@ internal class FakeFileSystemWatcher(string directory, NotifyFilters filters) : 
 
     public event FileSystemEventHandler? Changed;
     public event FileSystemEventHandler? Created;
+#pragma warning disable CS0067 // Unused
     public event RenamedEventHandler? Renamed;
+#pragma warning restore CS0067
     public event ErrorEventHandler? Error;
 
     public void TriggerChanged(string path) =>

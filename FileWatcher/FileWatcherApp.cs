@@ -182,8 +182,9 @@ internal sealed class FileWatcherApp(
             {
                 foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
                 {
-                    await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
-                    LogService.Log(LogLevel.Info, $"[{entry.Name ?? "Hook"}] startup hook executed");
+                    var name = string.IsNullOrWhiteSpace(entry.Name) ? "<Anonymous>" : entry.Name;
+                    await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, token);
+                    LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
                 }
             }
             catch (OperationCanceledException) { }
