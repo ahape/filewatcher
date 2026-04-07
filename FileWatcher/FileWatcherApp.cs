@@ -197,10 +197,10 @@ internal sealed class FileWatcherApp(
 
         IEnumerable<Task> tasks = hooks.Select(async entry =>
         {
-            string name = string.IsNullOrWhiteSpace(entry.Name) ? "<Anonymous>" : entry.Name;
+            string name = string.IsNullOrWhiteSpace(entry.Name) ? Constants.AnonymousHookName : entry.Name;
             Task hookTask = RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, linkedToken);
 
-            int timeout = Config.Settings.StartupTimeoutMs > 0 ? Config.Settings.StartupTimeoutMs : 2000;
+            int timeout = Config.Settings.StartupTimeoutMs > 0 ? Config.Settings.StartupTimeoutMs : Constants.DefaultStartupTimeoutMs;
             Task delayTask = Task.Delay(timeout, linkedToken);
 
             Task completedTask = await Task.WhenAny(hookTask, delayTask);
@@ -340,7 +340,7 @@ internal sealed class FileWatcherApp(
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
         IFileSystemWatcher watcher = _fs.CreateWatcher(
             directory,
-            NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
+            Constants.WatcherNotifyFilters
         );
         watcher.EnableRaisingEvents = true;
         watcher.Changed += (_, e) => HandleFileEvent(e);
@@ -531,9 +531,7 @@ internal sealed class FileWatcherApp(
         LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
     }
 
-    private const int DefaultDashboardPort = 5002;
-
-    private static readonly TimeSpan s_keyPollInterval = TimeSpan.FromMilliseconds(75);
+    private static readonly TimeSpan s_keyPollInterval = Constants.KeyPollInterval;
     private static readonly JsonSerializerOptions s_serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -551,7 +549,7 @@ internal sealed class FileWatcherApp(
         $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
 
     private int GetDashboardPort() =>
-        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : DefaultDashboardPort;
+        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : Constants.DefaultDashboardPort;
 
     private static string EntryLabel(UpdateEntry entry) =>
         string.IsNullOrWhiteSpace(entry.Description)

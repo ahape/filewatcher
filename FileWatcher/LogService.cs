@@ -32,7 +32,7 @@ public static class LogService
     public static IEnumerable<LogEntry> GetRecentLogs() => s_logs;
 
     /// <summary>Maximum number of log entries retained in the in-memory queue for the dashboard.</summary>
-    internal const int MaxLogEntries = 500;
+    internal static int MaxLogEntries => Constants.MaxLogEntries;
 
     /// <summary>Removes all retained entries. Intended for test isolation only.</summary>
     internal static void Clear() => s_logs.Clear();

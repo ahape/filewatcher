@@ -13,7 +13,7 @@ internal static class LogWebServerPluginLoader
         if (disableWeb)
             return new NullLogWebServer();
 
-        string path = pluginPath ?? Path.Combine(AppContext.BaseDirectory, PluginAssemblyName);
+        string path = pluginPath ?? Path.Combine(AppContext.BaseDirectory, Constants.PluginAssemblyName);
         if (!File.Exists(path))
             return new NullLogWebServer();
 
@@ -43,5 +43,4 @@ internal static class LogWebServerPluginLoader
         return type == null ? null : (ILogWebServer?)Activator.CreateInstance(type);
     }
 
-    private const string PluginAssemblyName = "FileWatcher.Web.dll";
 }

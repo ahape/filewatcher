@@ -4,14 +4,14 @@ namespace FileWatcher;
 public sealed record WatchSettings
 {
     /// <summary>Milliseconds to wait after a file change before acting, to coalesce rapid saves.</summary>
-    public int DebounceMs { get; set; } = 1000;
+    public int DebounceMs { get; set; } = Constants.DefaultDebounceMs;
 
     /// <summary>Controls debug output visibility. Set to <c>"Debug"</c> or <c>"Trace"</c> to enable verbose diagnostic logging.</summary>
-    public string LogLevel { get; set; } = "Info";
+    public string LogLevel { get; set; } = Constants.DefaultLogLevel;
 
     /// <summary>TCP port for the web dashboard. Defaults to 5002 if zero or omitted.</summary>
-    public int DashboardPort { get; set; } = 5002;
+    public int DashboardPort { get; set; } = Constants.DefaultDashboardPort;
 
     /// <summary>Milliseconds to wait for startup hooks before considering them successfully started in the background.</summary>
-    public int StartupTimeoutMs { get; set; } = 2000;
+    public int StartupTimeoutMs { get; set; } = Constants.DefaultStartupTimeoutMs;
 }

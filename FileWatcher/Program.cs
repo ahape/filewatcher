@@ -10,7 +10,6 @@ namespace FileWatcher;
 /// </summary>
 internal static class Program
 {
-    private const string ConfigFileName = "watchconfig.json";
     private static readonly CancellationTokenSource s_shutdownTokenSource = new();
 
     private static async Task Main(string[] args)
@@ -25,7 +24,7 @@ internal static class Program
         try
         {
             using var app = new FileWatcherApp(
-                ConfigFileName,
+                Constants.ConfigFileName,
                 webServer: LogWebServerPluginLoader.Load(options.DisableWeb)
             );
             await app.RunAsync(s_shutdownTokenSource.Token, options.ExitAfterStartup);

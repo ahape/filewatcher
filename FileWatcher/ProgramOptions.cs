@@ -12,11 +12,11 @@ internal sealed record ProgramOptions
         {
             DisableWeb = Array.Exists(
                 args,
-                arg => string.Equals(arg, "--no-web", StringComparison.OrdinalIgnoreCase)
+                arg => string.Equals(arg, Constants.ArgNoWeb, StringComparison.OrdinalIgnoreCase)
             ),
             ExitAfterStartup = Array.Exists(
                 args,
-                arg => string.Equals(arg, "--exit-after-startup", StringComparison.OrdinalIgnoreCase)
+                arg => string.Equals(arg, Constants.ArgExitAfterStartup, StringComparison.OrdinalIgnoreCase)
             ),
         };
 }
