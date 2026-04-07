@@ -26,7 +26,7 @@ internal sealed class FileWatcherApp(
     /// watchers, running startup hooks, starting the web server, and entering the console
     /// command loop.
     /// </summary>
-    public async Task RunAsync(CancellationToken token)
+    public async Task RunAsync(CancellationToken token, bool exitAfterStartup = false)
     {
         await LoadConfigurationAsync(token);
         SetupWatchers();
@@ -36,7 +36,14 @@ internal sealed class FileWatcherApp(
             _ = _webServer.StartAsync(port, token);
         PrintWelcome(_webServer.IsEnabled, port);
 
-        await Task.WhenAll(RunStartupHooksAsync(token), RunConsoleLoopAsync(token));
+        if (exitAfterStartup)
+        {
+            await RunStartupHooksAsync(token);
+        }
+        else
+        {
+            await Task.WhenAll(RunStartupHooksAsync(token), RunConsoleLoopAsync(token));
+        }
     }
 
     public void Dispose()
@@ -191,9 +198,23 @@ internal sealed class FileWatcherApp(
         IEnumerable<Task> tasks = hooks.Select(async entry =>
         {
             string name = string.IsNullOrWhiteSpace(entry.Name) ? "<Anonymous>" : entry.Name;
-            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, linkedToken);
-            if (!linkedToken.IsCancellationRequested)
-                LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
+            Task hookTask = RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, linkedToken);
+
+            int timeout = Config.Settings.StartupTimeoutMs > 0 ? Config.Settings.StartupTimeoutMs : 2000;
+            Task delayTask = Task.Delay(timeout, linkedToken);
+
+            Task completedTask = await Task.WhenAny(hookTask, delayTask);
+
+            if (completedTask == hookTask)
+            {
+                if (!linkedToken.IsCancellationRequested)
+                    LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
+            }
+            else
+            {
+                if (!linkedToken.IsCancellationRequested)
+                    LogService.Log(LogLevel.Info, $"[{name}] startup hook running in background");
+            }
         });
 
         await Task.WhenAll(tasks);

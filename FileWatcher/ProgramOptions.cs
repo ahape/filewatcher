@@ -5,6 +5,7 @@ namespace FileWatcher;
 internal sealed record ProgramOptions
 {
     public bool DisableWeb { get; init; }
+    public bool ExitAfterStartup { get; init; }
 
     public static ProgramOptions Parse(string[] args) =>
         new()
@@ -12,6 +13,10 @@ internal sealed record ProgramOptions
             DisableWeb = Array.Exists(
                 args,
                 arg => string.Equals(arg, "--no-web", StringComparison.OrdinalIgnoreCase)
+            ),
+            ExitAfterStartup = Array.Exists(
+                args,
+                arg => string.Equals(arg, "--exit-after-startup", StringComparison.OrdinalIgnoreCase)
             ),
         };
 }

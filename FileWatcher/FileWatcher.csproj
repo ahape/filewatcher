@@ -4,4 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <Target Name="BuildWebPlugin" AfterTargets="Build">
+    <MSBuild Projects="..\FileWatcher.Web\FileWatcher.Web.csproj" Targets="Build" Properties="Configuration=$(Configuration);BuildProjectReferences=false" />
+    <Copy SourceFiles="..\FileWatcher.Web\bin\$(Configuration)\$(TargetFramework)\FileWatcher.Web.dll" DestinationFolder="$(OutputPath)" />
+  </Target>
 </Project>

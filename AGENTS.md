@@ -55,6 +55,7 @@ To rebuild just the frontend during development: `cd WebFrontEnd && npm run buil
 - **Formatting**: You can format all of the csharp files via the command: `dnx -y csharpier format .`.
 - **Dependencies**: The project depends on `Microsoft.AspNetCore.App` for the built-in web server. Unless completely unavoidable, rely solely on built-in .NET SDK packages. The web frontend uses npm packages (`esbuild`, `@tailwindcss/cli`, `htmx.org`) but these are dev/build-time only.
 - **Testing**: Maintain high test coverage using xUnit in the `FileWatcher.Tests` project. To run tests, simply execute `dotnet test`.
+- **Manual Testing**: When testing the application manually (e.g., via `dotnet run`), always append `--exit-after-startup` so you don't wait on the process indefinitely.
 
 ## Member Ordering
 All top-level `*.cs` files must order their members using a three-level sort:

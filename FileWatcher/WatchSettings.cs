@@ -11,4 +11,7 @@ public sealed record WatchSettings
 
     /// <summary>TCP port for the web dashboard. Defaults to 5002 if zero or omitted.</summary>
     public int DashboardPort { get; set; } = 5002;
+
+    /// <summary>Milliseconds to wait for startup hooks before considering them successfully started in the background.</summary>
+    public int StartupTimeoutMs { get; set; } = 2000;
 }

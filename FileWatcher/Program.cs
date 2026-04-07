@@ -28,7 +28,7 @@ internal static class Program
                 ConfigFileName,
                 webServer: LogWebServerPluginLoader.Load(options.DisableWeb)
             );
-            await app.RunAsync(s_shutdownTokenSource.Token);
+            await app.RunAsync(s_shutdownTokenSource.Token, options.ExitAfterStartup);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
