@@ -8,7 +8,6 @@
     "onStartup": [
       {
         "name": "Azurite",
-        "location": "c:\\Users\\AlanHape\\source\\repos\\Azurite\\",
         "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Run-Azurite.ps1",
         "logLevel": "None"
       },
