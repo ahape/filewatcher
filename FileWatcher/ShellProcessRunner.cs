@@ -34,8 +34,26 @@ internal sealed class ShellProcessRunner : IProcessRunner
         p.Start();
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        await p.WaitForExitAsync(token);
-        return p.ExitCode;
+        try
+        {
+            await p.WaitForExitAsync(token);
+            return p.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!p.HasExited)
+            {
+                try
+                {
+                    p.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    // Ignore errors during kill
+                }
+            }
+            throw;
+        }
     }
 
     private static ProcessStartInfo CreateStartInfo(string cmd, string dir)

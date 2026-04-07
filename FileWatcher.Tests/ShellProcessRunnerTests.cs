@@ -112,4 +112,26 @@ public sealed class ShellProcessRunnerTests : IDisposable
 
         Assert.NotEqual(0, exitCode);
     }
+
+    [Fact]
+    public async Task RunAsync_Cancelled_ThrowsOperationCanceledException()
+    {
+        string command = OperatingSystem.IsWindows()
+            ? "ping localhost -n 10 > nul"
+            : "sleep 10";
+
+        using var cts = new CancellationTokenSource();
+        var runTask = Runner.RunAsync(
+            command,
+            Environment.CurrentDirectory,
+            _ => { },
+            _ => { },
+            cts.Token
+        );
+
+        await Task.Delay(200);
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
+    }
 }

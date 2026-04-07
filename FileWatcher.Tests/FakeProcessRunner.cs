@@ -14,8 +14,12 @@ internal sealed class FakeProcessRunner : IProcessRunner
     public string? OutputLine { get; set; }
     public string? ErrorLine { get; set; }
     public bool ShouldThrow { get; set; }
+    public int DelayMs { get; set; } = 0;
+    public int MaxConcurrentCalls => _maxConcurrentCalls;
 
-    public Task<int> RunAsync(
+    private int _concurrentCalls, _maxConcurrentCalls;
+
+    public async Task<int> RunAsync(
         string command,
         string workingDirectory,
         Action<string> onOutput,
@@ -25,12 +29,34 @@ internal sealed class FakeProcessRunner : IProcessRunner
     {
         if (ShouldThrow)
             throw new Exception("fail");
-        token.ThrowIfCancellationRequested();
-        Calls.Add(new Call(command, workingDirectory));
-        if (OutputLine != null)
-            onOutput(OutputLine);
-        if (ErrorLine != null)
-            onError(ErrorLine);
-        return Task.FromResult(ExitCode);
+
+        int current = Interlocked.Increment(ref _concurrentCalls);
+        lock (this)
+        {
+            if (current > _maxConcurrentCalls)
+                _maxConcurrentCalls = current;
+        }
+
+        try
+        {
+            lock (Calls)
+            {
+                Calls.Add(new Call(command, workingDirectory));
+            }
+
+            if (DelayMs > 0)
+                await Task.Delay(DelayMs, token);
+
+            token.ThrowIfCancellationRequested();
+            if (OutputLine != null)
+                onOutput(OutputLine);
+            if (ErrorLine != null)
+                onError(ErrorLine);
+            return ExitCode;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _concurrentCalls);
+        }
     }
 }

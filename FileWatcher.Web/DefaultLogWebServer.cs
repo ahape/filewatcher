@@ -101,6 +101,9 @@ public sealed class DefaultLogWebServer : ILogWebServer
 
     private static async Task SendLogEntryAsync(HttpContext c, LogEntry e, CancellationToken token)
     {
+        if (s_isSending.Value)
+            return;
+
         try
         {
             string json = JsonSerializer.Serialize(e, s_streamJsonOptions);
@@ -109,9 +112,19 @@ public sealed class DefaultLogWebServer : ILogWebServer
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            LogService.Log(LogLevel.Error, $"[Stream] Failed to send log entry: {ex.Message}");
+            s_isSending.Value = true;
+            try
+            {
+                LogService.Log(LogLevel.Error, $"[Stream] Failed to send log entry: {ex.Message}");
+            }
+            finally
+            {
+                s_isSending.Value = false;
+            }
         }
     }
+
+    private static readonly AsyncLocal<bool> s_isSending = new();
 
     private static string GetContentType(string assetName) =>
         assetName switch

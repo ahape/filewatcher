@@ -48,6 +48,8 @@ internal sealed class FileWatcherApp(
             cts.Cancel();
             cts.Dispose();
         }
+        _hooksCts?.Cancel();
+        _hooksCts?.Dispose();
         DisposeWatchers();
         _disposed = true;
         GC.SuppressFinalize(this);
@@ -171,34 +173,30 @@ internal sealed class FileWatcherApp(
     }
 
     /// <summary>
-    /// Runs all startup hooks (fire-and-forget for long-running watchers).
-    /// Returns a task that completes when the token is cancelled.
+    /// Runs all startup hooks in parallel.
+    /// Cancels any previous startup hooks if this is a reload.
+    /// Returns a task that completes when all hooks have finished or were cancelled.
     /// </summary>
-    internal Task RunStartupHooksAsync(CancellationToken token)
+    internal async Task RunStartupHooksAsync(CancellationToken token)
     {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                foreach (StartupEntry entry in Config.Hooks?.OnStartup ?? [])
-                {
-                    var name = string.IsNullOrWhiteSpace(entry.Name) ? "<Anonymous>" : entry.Name;
-                    await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, token);
-                    LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                LogService.Log(LogLevel.Error, $"Startup hooks failed: {ex.Message}");
-            }
-            finally
-            {
-                _startupHooksCompleted.TrySetResult();
-            }
-        }, token);
+        _hooksCts?.Cancel();
+        _hooksCts?.Dispose();
+        _hooksCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        CancellationToken linkedToken = _hooksCts.Token;
 
-        return _startupHooksCompleted.Task.WaitAsync(token);
+        StartupEntry[] hooks = [.. Config.Hooks?.OnStartup ?? []];
+        if (hooks.Length == 0)
+            return;
+
+        IEnumerable<Task> tasks = hooks.Select(async entry =>
+        {
+            string name = string.IsNullOrWhiteSpace(entry.Name) ? "<Anonymous>" : entry.Name;
+            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, linkedToken);
+            if (!linkedToken.IsCancellationRequested)
+                LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
+        });
+
+        await Task.WhenAll(tasks);
     }
 
     /// <summary>
@@ -254,7 +252,7 @@ internal sealed class FileWatcherApp(
     private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
     private readonly ILogWebServer _webServer = webServer ?? new NullLogWebServer();
     private readonly IConsole _console = console ?? new SystemConsole();
-    private readonly TaskCompletionSource _startupHooksCompleted = new();
+    private CancellationTokenSource? _hooksCts;
     private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
         StringComparer.OrdinalIgnoreCase
     );
