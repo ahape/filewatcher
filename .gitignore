@@ -7,3 +7,4 @@ TestResults/
 .tools/
 WebFrontEnd/wwwroot/
 .worktree/
+.claude/*.local.*
