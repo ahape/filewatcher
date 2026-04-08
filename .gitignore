@@ -9,3 +9,4 @@ WebFrontEnd/wwwroot/
 .worktree/
 .claude/*.local.*
 .codex
+.gemini

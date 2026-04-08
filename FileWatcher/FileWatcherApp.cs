@@ -523,6 +523,9 @@ internal sealed class FileWatcherApp(
         _directoryWatchers.Clear();
     }
 
+    private int GetDashboardPort() =>
+        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : Constants.DefaultDashboardPort;
+
     /// <summary>Logs the startup banner with the dashboard state and available key commands.</summary>
     internal static void PrintWelcome(bool webServerEnabled, int port)
     {
@@ -549,9 +552,6 @@ internal sealed class FileWatcherApp(
     /// </summary>
     private static string EntryKey(UpdateEntry entry) =>
         $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
-
-    private int GetDashboardPort() =>
-        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : Constants.DefaultDashboardPort;
 
     private static string EntryLabel(UpdateEntry entry) =>
         string.IsNullOrWhiteSpace(entry.Description)
