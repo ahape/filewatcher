@@ -34,6 +34,7 @@ public class LogWebServerTests : IDisposable
         _client.Dispose();
         try { _serverTask.Wait(); } catch { }
         Console.SetOut(_originalOut);
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

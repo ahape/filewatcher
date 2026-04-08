@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -87,10 +85,13 @@ public sealed class FileWatcherAppTests : IDisposable
     {
         var app = await CreateReadyApp(new()
         {
-            Hooks = new() { OnUpdate = [
+            Hooks = new()
+            {
+                OnUpdate = [
                 new() { Source = WriteFile("dir/1.txt"), Enabled = true },
-                new() { Source = WriteFile("dir/2.txt"), Enabled = true }
-            ] }
+                    new() { Source = WriteFile("dir/2.txt"), Enabled = true }
+            ]
+            }
         });
         Assert.Single(app._directoryWatchers);
     }

@@ -245,8 +245,10 @@ internal sealed class FileWatcherApp(
             int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
-                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
-                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
+                silent ? _ => { }
+            : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
+                silent ? _ => { }
+            : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
                 token
             );
             if (exitCode != 0 && !silent)

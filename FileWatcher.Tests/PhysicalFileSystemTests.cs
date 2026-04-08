@@ -24,6 +24,8 @@ public class PhysicalFileSystemTests : IDisposable
             Directory.Delete(_testDir, true);
         }
         catch { }
+
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
