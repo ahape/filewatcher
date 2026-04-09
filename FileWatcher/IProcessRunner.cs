@@ -20,6 +20,7 @@ internal interface IProcessRunner
         string workingDirectory,
         Action<string> onOutput,
         Action<string> onError,
-        CancellationToken token
+        CancellationToken token,
+        Action<int>? onStarted = null
     );
 }

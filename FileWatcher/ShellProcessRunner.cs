@@ -17,43 +17,14 @@ internal sealed class ShellProcessRunner : IProcessRunner
         string dir,
         Action<string> onOut,
         Action<string> onErr,
-        CancellationToken token
+        CancellationToken token,
+        Action<int>? onStarted = null
     )
     {
         using var p = new Process { StartInfo = CreateStartInfo(cmd, dir) };
-        p.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-                onOut(e.Data);
-        };
-        p.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-                onErr(e.Data);
-        };
-        p.Start();
-        p.BeginOutputReadLine();
-        p.BeginErrorReadLine();
-        try
-        {
-            await p.WaitForExitAsync(token);
-            return p.ExitCode;
-        }
-        catch (OperationCanceledException)
-        {
-            if (!p.HasExited)
-            {
-                try
-                {
-                    p.Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                    // Ignore errors during kill
-                }
-            }
-            throw;
-        }
+        AttachHandlers(p, onOut, onErr);
+        StartProcess(p, onStarted);
+        return await WaitForExitAsync(p, token);
     }
 
     private static ProcessStartInfo CreateStartInfo(string cmd, string dir)
@@ -71,5 +42,56 @@ internal sealed class ShellProcessRunner : IProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+    }
+
+    private static void AttachHandlers(Process process, Action<string> onOut, Action<string> onErr)
+    {
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null)
+                onOut(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null)
+                onErr(e.Data);
+        };
+    }
+
+    private static void StartProcess(Process process, Action<int>? onStarted)
+    {
+        process.Start();
+        onStarted?.Invoke(process.Id);
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+    }
+
+    private static async Task<int> WaitForExitAsync(Process process, CancellationToken token)
+    {
+        try
+        {
+            await process.WaitForExitAsync(token);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            TryKillProcess(process);
+            throw;
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        if (process.HasExited)
+            return;
+
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // Ignore errors during kill
+        }
     }
 }

@@ -93,11 +93,11 @@ internal sealed class FileWatcherApp(
 
     internal WatchConfig Config { get; set; } = new();
 
-    private readonly ConcurrentDictionary<Task, string> _activeTasks = new();
+    private readonly ConcurrentDictionary<Task, ActiveTaskInfo> _activeTasks = new();
 
-    private void TrackTask(Task task, string label)
+    private void TrackTask(Task task, ActiveTaskInfo taskInfo)
     {
-        _activeTasks.TryAdd(task, label);
+        _activeTasks.TryAdd(task, taskInfo);
         task.ContinueWith(
             t => _activeTasks.TryRemove(t, out _),
             TaskContinuationOptions.ExecuteSynchronously
@@ -107,16 +107,14 @@ internal sealed class FileWatcherApp(
     /// <summary>Prints a list of all currently active background tasks/subprocesses.</summary>
     internal void ShowTasks()
     {
-        var active = _activeTasks.Values.ToArray();
+        ActiveTaskInfo[] active = [.. _activeTasks.Values];
         if (active.Length == 0)
         {
             LogService.Log(LogLevel.Info, "No active background tasks.");
             return;
         }
 
-        LogService.Log(LogLevel.Info, $"\nActive Tasks ({active.Length}):");
-        foreach (string label in active.OrderBy(l => l))
-            LogService.Log(LogLevel.Info, $"  - {label}");
+        LogService.Log(LogLevel.Info, BuildTasksTable(active));
     }
 
     /// <summary>
@@ -227,9 +225,12 @@ internal sealed class FileWatcherApp(
         if (cts != null)
             _pendingTokens[key] = cts;
 
-        Task task = Task.Run(() => ExecuteEntryActionsAsync(entry, key, label, cts, token));
+        var taskInfo = new ActiveTaskInfo(label);
+        Task task = Task.Run(() =>
+            ExecuteEntryActionsAsync(entry, key, label, cts, token, taskInfo.SetProcessId)
+        );
         if (!fireAndForget)
-            TrackTask(task, label);
+            TrackTask(task, taskInfo);
     }
 
     /// <summary>
@@ -261,7 +262,8 @@ internal sealed class FileWatcherApp(
         string location,
         LogLevel hookLogLevel,
         string name,
-        CancellationToken token
+        CancellationToken token,
+        Action<int>? onStarted = null
     )
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -276,11 +278,10 @@ internal sealed class FileWatcherApp(
             int exitCode = await _processRunner.RunAsync(
                 command,
                 workingDirectory,
-                silent ? _ => { }
-            : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
-                silent ? _ => { }
-            : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
-                token
+                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
+                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
+                token,
+                onStarted
             );
             if (exitCode != 0 && !silent)
                 LogService.Log(LogLevel.Warning, $"[{tag}] exited with code {exitCode}");
@@ -329,18 +330,28 @@ internal sealed class FileWatcherApp(
 
     private async Task RunStartupHookAsync(StartupEntry entry, CancellationToken token)
     {
-        string name = string.IsNullOrWhiteSpace(entry.Name) ? Constants.AnonymousHookName : entry.Name;
+        string name = string.IsNullOrWhiteSpace(entry.Name)
+            ? Constants.AnonymousHookName
+            : entry.Name;
         bool fireAndForget = entry.FireAndForget == true;
         CancellationToken hookToken = fireAndForget ? CancellationToken.None : token;
+        var taskInfo = new ActiveTaskInfo(name);
 
-        Task hookTask = RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, hookToken);
+        Task hookTask = RunHookAsync(
+            entry.Command,
+            entry.Location,
+            entry.LogLevel,
+            name,
+            hookToken,
+            taskInfo.SetProcessId
+        );
         if (fireAndForget)
         {
             LogService.Log(LogLevel.Info, $"[{name}] startup hook fired (fire-and-forget)");
             return;
         }
 
-        TrackTask(hookTask, name);
+        TrackTask(hookTask, taskInfo);
         await LogStartupHookStateAsync(hookTask, name, token);
     }
 
@@ -350,9 +361,10 @@ internal sealed class FileWatcherApp(
         if (token.IsCancellationRequested)
             return;
 
-        string message = completedTask == hookTask
-            ? $"[{name}] startup hook executed"
-            : $"[{name}] startup hook running in background";
+        string message =
+            completedTask == hookTask
+                ? $"[{name}] startup hook executed"
+                : $"[{name}] startup hook running in background";
         LogService.Log(LogLevel.Info, message);
     }
 
@@ -408,10 +420,7 @@ internal sealed class FileWatcherApp(
     private IFileSystemWatcher CreateWatcher(string directory)
     {
         LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
-        IFileSystemWatcher watcher = _fs.CreateWatcher(
-            directory,
-            Constants.WatcherNotifyFilters
-        );
+        IFileSystemWatcher watcher = _fs.CreateWatcher(directory, Constants.WatcherNotifyFilters);
         watcher.EnableRaisingEvents = true;
         watcher.Changed += (_, e) => HandleFileEvent(e);
         watcher.Created += (_, e) => HandleFileEvent(e);
@@ -506,7 +515,8 @@ internal sealed class FileWatcherApp(
         string key,
         string label,
         CancellationTokenSource? cts,
-        CancellationToken token
+        CancellationToken token,
+        Action<int>? onProcessStarted
     )
     {
         try
@@ -516,7 +526,7 @@ internal sealed class FileWatcherApp(
             await Task.Delay(delay, token);
 
             LogDebug($"Debounce complete, executing actions for [{label}]");
-            await RunEntryAsync(entry, token);
+            await RunEntryAsync(entry, token, onProcessStarted);
         }
         catch (OperationCanceledException)
         {
@@ -529,14 +539,20 @@ internal sealed class FileWatcherApp(
         finally
         {
             if (cts != null)
-                _pendingTokens.TryRemove(new KeyValuePair<string, CancellationTokenSource>(key, cts));
+                _pendingTokens.TryRemove(
+                    new KeyValuePair<string, CancellationTokenSource>(key, cts)
+                );
             cts?.Dispose();
             LogDebug($"Completed actions for [{label}] and cleaned up token");
         }
     }
 
     /// <summary>Runs the copy and/or command actions for a single entry.</summary>
-    private async Task RunEntryAsync(UpdateEntry entry, CancellationToken token)
+    private async Task RunEntryAsync(
+        UpdateEntry entry,
+        CancellationToken token,
+        Action<int>? onProcessStarted
+    )
     {
         if (entry.CopyTo != null)
         {
@@ -553,7 +569,14 @@ internal sealed class FileWatcherApp(
         if (!string.IsNullOrWhiteSpace(entry.Command))
         {
             LogDebug($"Running command: {entry.Command}");
-            await RunHookAsync(entry.Command, entry.Location, entry.LogLevel, entry.Name, token);
+            await RunHookAsync(
+                entry.Command,
+                entry.Location,
+                entry.LogLevel,
+                entry.Name,
+                token,
+                onProcessStarted
+            );
         }
     }
 
@@ -594,7 +617,9 @@ internal sealed class FileWatcherApp(
     }
 
     private int GetDashboardPort() =>
-        Config.Settings.DashboardPort > 0 ? Config.Settings.DashboardPort : Constants.DefaultDashboardPort;
+        Config.Settings.DashboardPort > 0
+            ? Config.Settings.DashboardPort
+            : Constants.DefaultDashboardPort;
 
     /// <summary>Logs the startup banner with the dashboard state and available key commands.</summary>
     internal static void PrintWelcome(bool webServerEnabled, int port)
@@ -603,7 +628,10 @@ internal sealed class FileWatcherApp(
             ? $"Monitoring started. Dashboard: http://localhost:{port}"
             : "Monitoring started. Web dashboard disabled.";
         LogService.Log(LogLevel.Success, message);
-        LogService.Log(LogLevel.Info, "Commands: [r]eload, [t]asks, [q]uit, any other key for status.");
+        LogService.Log(
+            LogLevel.Info,
+            "Commands: [r]eload, [t]asks, [q]uit, any other key for status."
+        );
     }
 
     private static readonly TimeSpan s_keyPollInterval = Constants.KeyPollInterval;
@@ -616,6 +644,35 @@ internal sealed class FileWatcherApp(
         Converters = { new JsonStringEnumConverter() },
     };
 
+    private static string BuildTasksTable(ActiveTaskInfo[] tasks)
+    {
+        string[][] rows =
+        [
+            .. tasks
+                .OrderBy(GetTaskSortKey)
+                .ThenBy(task => task.Label, StringComparer.OrdinalIgnoreCase)
+                .Select(CreateTaskCells),
+        ];
+        int processIdWidth = GetColumnWidth("Process ID", rows, 0);
+        int taskWidth = GetColumnWidth("Task", rows, 1);
+        string border = CreateTableBorder(processIdWidth, taskWidth);
+        string header = CreateTableRow("Process ID", "Task", processIdWidth, taskWidth);
+        string[] body =
+        [
+            .. rows.Select(row => CreateTableRow(row[0], row[1], processIdWidth, taskWidth)),
+        ];
+        string[] lines =
+        [
+            $"Active Tasks ({rows.Length}):",
+            border,
+            header,
+            border,
+            .. body,
+            border,
+        ];
+        return string.Join(Environment.NewLine, lines);
+    }
+
     /// <summary>
     /// Returns a key that uniquely identifies this entry's action, so that multiple
     /// entries watching the same source file get independent debounce timers.
@@ -627,6 +684,24 @@ internal sealed class FileWatcherApp(
         string.IsNullOrWhiteSpace(entry.Description)
             ? Path.GetFileName(entry.Source)
             : entry.Description;
+
+    private static string CreateTableBorder(int firstWidth, int secondWidth) =>
+        $"+-{new string('-', firstWidth)}-+-{new string('-', secondWidth)}-+";
+
+    private static string CreateTableRow(
+        string first,
+        string second,
+        int firstWidth,
+        int secondWidth
+    ) => $"| {first.PadRight(firstWidth)} | {second.PadRight(secondWidth)} |";
+
+    private static string[] CreateTaskCells(ActiveTaskInfo task) =>
+        [task.ProcessId?.ToString() ?? "-", task.Label];
+
+    private static int GetColumnWidth(string header, string[][] rows, int column) =>
+        Math.Max(header.Length, rows.Max(row => row[column].Length));
+
+    private static int GetTaskSortKey(ActiveTaskInfo task) => task.ProcessId ?? int.MaxValue;
 
     private static bool IsEnabled(StartupEntry entry) => entry.Enabled != false;
 }

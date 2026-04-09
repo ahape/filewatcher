@@ -32,7 +32,13 @@ public sealed class FileWatcherAppTests : IDisposable
 
     private FileWatcherApp CreateApp(WatchConfig c, FakeProcessRunner? r = null)
     {
-        var app = new FileWatcherApp(WriteCfg(c), r ?? new FakeProcessRunner(), _fs, _webServer, _console);
+        var app = new FileWatcherApp(
+            WriteCfg(c),
+            r ?? new FakeProcessRunner(),
+            _fs,
+            _webServer,
+            _console
+        );
         return app;
     }
 
@@ -69,37 +75,62 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task LoadConfiguration_MissingFile_ThrowsFileNotFound()
     {
-        var app = new FileWatcherApp("/none.json", new FakeProcessRunner(), _fs, _webServer, _console);
+        var app = new FileWatcherApp(
+            "/none.json",
+            new FakeProcessRunner(),
+            _fs,
+            _webServer,
+            _console
+        );
         await Assert.ThrowsAsync<FileNotFoundException>(() => app.LoadConfigurationAsync(default));
     }
 
     [Fact]
     public async Task SetupWatchers_EnabledEntry_CreatesWatcher()
     {
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Source = WriteFile("a.txt"), Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new()
+            {
+                Hooks = new()
+                {
+                    OnUpdate = [new() { Source = WriteFile("a.txt"), Enabled = true }],
+                },
+            }
+        );
         Assert.Single(app._directoryWatchers);
     }
 
     [Fact]
     public async Task SetupWatchers_TwoFilesSameDir_OneWatcher()
     {
-        var app = await CreateReadyApp(new()
-        {
-            Hooks = new()
+        var app = await CreateReadyApp(
+            new()
             {
-                OnUpdate = [
-                new() { Source = WriteFile("dir/1.txt"), Enabled = true },
-                    new() { Source = WriteFile("dir/2.txt"), Enabled = true }
-            ]
+                Hooks = new()
+                {
+                    OnUpdate =
+                    [
+                        new() { Source = WriteFile("dir/1.txt"), Enabled = true },
+                        new() { Source = WriteFile("dir/2.txt"), Enabled = true },
+                    ],
+                },
             }
-        });
+        );
         Assert.Single(app._directoryWatchers);
     }
 
     [Fact]
     public async Task HandleFileEvent_ValidFile_SchedulesActions()
     {
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Source = WriteFile("s.txt"), Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new()
+            {
+                Hooks = new()
+                {
+                    OnUpdate = [new() { Source = WriteFile("s.txt"), Enabled = true }],
+                },
+            }
+        );
 
         app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "s.txt"));
 
@@ -109,7 +140,18 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task HandleFileEvent_SpuriousEvent_SameState_DoesNotScheduleActions()
     {
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Source = WriteFile("spurious.txt", "content"), Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new()
+            {
+                Hooks = new()
+                {
+                    OnUpdate =
+                    [
+                        new() { Source = WriteFile("spurious.txt", "content"), Enabled = true },
+                    ],
+                },
+            }
+        );
 
         app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "spurious.txt"));
         app._pendingTokens.Clear();
@@ -122,7 +164,9 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task HandleFileEvent_SpuriousEvent_FileChanged_SchedulesActions()
     {
         var src = WriteFile("modified.txt", "content 1");
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new() { Hooks = new() { OnUpdate = [new() { Source = src, Enabled = true }] } }
+        );
 
         app.HandleFileEvent(new(WatcherChangeTypes.Changed, "/", "modified.txt"));
         app._pendingTokens.Clear();
@@ -160,16 +204,108 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
+    public async Task ShowTasks_ActiveCommand_FormatsSqlTableWithProcessId()
+    {
+        var runner = new FakeProcessRunner { DelayMs = 1000, ProcessId = 4321 };
+        var app = await CreateReadyApp(new() { Settings = new() { DebounceMs = 0 } }, runner);
+
+        app.ScheduleActions(
+            new()
+            {
+                Source = WriteFile("s.txt"),
+                Command = "build",
+                Description = "compile",
+            }
+        );
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (runner.Calls)
+            {
+                if (runner.Calls.Count > 0)
+                    break;
+            }
+            await Task.Delay(10);
+        }
+
+        lock (runner.Calls)
+        {
+            Assert.NotEmpty(runner.Calls);
+        }
+
+        LogService.Clear();
+        app.ShowTasks();
+
+        string message = Assert.Single(LogService.GetRecentLogs()).Message;
+        Assert.Equal(
+            """
+            Active Tasks (1):
+            +------------+---------+
+            | Process ID | Task    |
+            +------------+---------+
+            | 4321       | compile |
+            +------------+---------+
+            """.ReplaceLineEndings(),
+            message.ReplaceLineEndings()
+        );
+
+        await app.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ShowTasks_CopyOnlyAction_UsesDashForMissingProcessId()
+    {
+        var app = await CreateReadyApp(new() { Settings = new() { DebounceMs = 1000 } });
+
+        app.ScheduleActions(
+            new()
+            {
+                Source = WriteFile("copy.txt"),
+                CopyTo = "/d.txt",
+                Description = "copy",
+            }
+        );
+        await Task.Delay(50);
+
+        LogService.Clear();
+        app.ShowTasks();
+
+        string message = Assert.Single(LogService.GetRecentLogs()).Message;
+        Assert.Equal(
+            """
+            Active Tasks (1):
+            +------------+------+
+            | Process ID | Task |
+            +------------+------+
+            | -          | copy |
+            +------------+------+
+            """.ReplaceLineEndings(),
+            message.ReplaceLineEndings()
+        );
+
+        await app.DisposeAsync();
+    }
+
+    [Fact]
     public async Task RunStartupHooksAsync_RunsInParallel()
     {
         var r = new FakeProcessRunner { DelayMs = 100 };
-        var app = await CreateReadyApp(new()
-        {
-            Hooks = new()
+        var app = await CreateReadyApp(
+            new()
             {
-                OnStartup = [new() { Command = "h1" }, new() { Command = "h2" }, new() { Command = "h3" }],
+                Hooks = new()
+                {
+                    OnStartup =
+                    [
+                        new() { Command = "h1" },
+                        new() { Command = "h2" },
+                        new() { Command = "h3" },
+                    ],
+                },
             },
-        }, r);
+            r
+        );
 
         await app.RunStartupHooksAsync(default);
 
@@ -181,18 +317,21 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task RunStartupHooksAsync_SkipsDisabledHooks()
     {
         var r = new FakeProcessRunner();
-        var app = await CreateReadyApp(new()
-        {
-            Hooks = new()
+        var app = await CreateReadyApp(
+            new()
             {
-                OnStartup =
-                [
-                    new() { Command = "h1" },
-                    new() { Command = "h2", Enabled = false },
-                    new() { Command = "h3", Enabled = true },
-                ],
+                Hooks = new()
+                {
+                    OnStartup =
+                    [
+                        new() { Command = "h1" },
+                        new() { Command = "h2", Enabled = false },
+                        new() { Command = "h3", Enabled = true },
+                    ],
+                },
             },
-        }, r);
+            r
+        );
 
         await app.RunStartupHooksAsync(default);
 
@@ -203,7 +342,10 @@ public sealed class FileWatcherAppTests : IDisposable
     public async Task ReloadConfigurationAsync_CancelsOldHooks()
     {
         var r = new FakeProcessRunner { DelayMs = 1000 };
-        var app = await CreateReadyApp(new() { Hooks = new() { OnStartup = [new() { Command = "long-hook" }] } }, r);
+        var app = await CreateReadyApp(
+            new() { Hooks = new() { OnStartup = [new() { Command = "long-hook" }] } },
+            r
+        );
 
         // Start first hooks
         var task1 = app.RunStartupHooksAsync(default);
@@ -233,7 +375,11 @@ public sealed class FileWatcherAppTests : IDisposable
     {
         var app = await CreateReadyApp(new() { Settings = new() { DebounceMs = 1 } });
 
-        _fs.AddFile("/cfg.json", JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }), DateTime.UtcNow);
+        _fs.AddFile(
+            "/cfg.json",
+            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }),
+            DateTime.UtcNow
+        );
         await app.ReloadConfigurationAsync(default);
 
         Assert.Equal(9, app.Config.Settings.DebounceMs);
@@ -254,7 +400,12 @@ public sealed class FileWatcherAppTests : IDisposable
     [Fact]
     public async Task RunAsync_WithoutWebServer_PrintsDisabledMessage()
     {
-        var app = new FileWatcherApp(WriteCfg(new()), new FakeProcessRunner(), _fs, console: _console);
+        var app = new FileWatcherApp(
+            WriteCfg(new()),
+            new FakeProcessRunner(),
+            _fs,
+            console: _console
+        );
         _console.EnqueueKey('q', ConsoleKey.Q);
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => app.RunAsync(default));
@@ -267,7 +418,11 @@ public sealed class FileWatcherAppTests : IDisposable
     {
         var app = await CreateReadyApp(new() { Settings = new() { DebounceMs = 1 } });
 
-        _fs.AddFile("/cfg.json", JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }), DateTime.UtcNow);
+        _fs.AddFile(
+            "/cfg.json",
+            JsonSerializer.Serialize(new WatchConfig { Settings = new() { DebounceMs = 9 } }),
+            DateTime.UtcNow
+        );
         _console.EnqueueKey('r', ConsoleKey.R);
         _console.EnqueueKey('q', ConsoleKey.Q);
 
@@ -284,23 +439,39 @@ public sealed class FileWatcherAppTests : IDisposable
         _fs.AddFile("/cfg.json", "invalid json", DateTime.UtcNow);
         await app.ReloadConfigurationAsync(default);
 
-        Assert.Contains(LogService.GetRecentLogs(), l => l.Level == LogLevel.Error && l.Message.Contains("Failed to reload"));
+        Assert.Contains(
+            LogService.GetRecentLogs(),
+            l => l.Level == LogLevel.Error && l.Message.Contains("Failed to reload")
+        );
     }
 
     [Fact]
     public async Task SetupWatchers_MissingSource_SkipsAndLogsWarning()
     {
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Description = "test", Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new() { Hooks = new() { OnUpdate = [new() { Description = "test", Enabled = true }] } }
+        );
 
-        Assert.Contains(LogService.GetRecentLogs(), l => l.Level == LogLevel.Warning && l.Message.Contains("source is missing"));
+        Assert.Contains(
+            LogService.GetRecentLogs(),
+            l => l.Level == LogLevel.Warning && l.Message.Contains("source is missing")
+        );
     }
 
     [Fact]
     public async Task SetupWatchers_SourceNotFound_LogsWarning()
     {
-        var app = await CreateReadyApp(new() { Hooks = new() { OnUpdate = [new() { Source = "/missing.txt", Enabled = true }] } });
+        var app = await CreateReadyApp(
+            new()
+            {
+                Hooks = new() { OnUpdate = [new() { Source = "/missing.txt", Enabled = true }] },
+            }
+        );
 
-        Assert.Contains(LogService.GetRecentLogs(), l => l.Level == LogLevel.Warning && l.Message.Contains("Source file not found"));
+        Assert.Contains(
+            LogService.GetRecentLogs(),
+            l => l.Level == LogLevel.Warning && l.Message.Contains("Source file not found")
+        );
     }
 
     [Fact]
@@ -320,14 +491,20 @@ public sealed class FileWatcherAppTests : IDisposable
 
         await app.RunHookAsync("cmd", "/tmp", LogLevel.Info, "", default);
 
-        Assert.Contains(LogService.GetRecentLogs(), l => l.Level == LogLevel.Error && l.Message.Contains("Hook failed"));
+        Assert.Contains(
+            LogService.GetRecentLogs(),
+            l => l.Level == LogLevel.Error && l.Message.Contains("Hook failed")
+        );
     }
 
     [Fact]
     public void Dispose_ClearsResources()
     {
         var app = CreateApp(new());
-        app._directoryWatchers.TryAdd("dir", new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite));
+        app._directoryWatchers.TryAdd(
+            "dir",
+            new FakeFileSystemWatcher("dir", NotifyFilters.LastWrite)
+        );
 
         app.Dispose();
 
@@ -363,10 +540,7 @@ public sealed class FileWatcherAppTests : IDisposable
         var app = await CreateReadyApp(
             new()
             {
-                Hooks = new()
-                {
-                    OnStartup = [new() { Command = "forget", FireAndForget = true }],
-                },
+                Hooks = new() { OnStartup = [new() { Command = "forget", FireAndForget = true }] },
             },
             runner
         );

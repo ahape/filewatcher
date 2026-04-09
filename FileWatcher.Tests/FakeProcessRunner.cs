@@ -13,18 +13,21 @@ internal sealed class FakeProcessRunner : IProcessRunner
     public int ExitCode { get; set; } = 0;
     public string? OutputLine { get; set; }
     public string? ErrorLine { get; set; }
+    public int ProcessId { get; set; } = 4242;
     public bool ShouldThrow { get; set; }
     public int DelayMs { get; set; } = 0;
     public int MaxConcurrentCalls => _maxConcurrentCalls;
 
-    private int _concurrentCalls, _maxConcurrentCalls;
+    private int _concurrentCalls,
+        _maxConcurrentCalls;
 
     public async Task<int> RunAsync(
         string command,
         string workingDirectory,
         Action<string> onOutput,
         Action<string> onError,
-        CancellationToken token
+        CancellationToken token,
+        Action<int>? onStarted = null
     )
     {
         if (ShouldThrow)
@@ -44,6 +47,7 @@ internal sealed class FakeProcessRunner : IProcessRunner
                 Calls.Add(new Call(command, workingDirectory));
             }
 
+            onStarted?.Invoke(ProcessId);
             if (DelayMs > 0)
                 await Task.Delay(DelayMs, token);
 
