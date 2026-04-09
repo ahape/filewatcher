@@ -23,7 +23,7 @@ internal static class Program
 
         try
         {
-            using var app = new FileWatcherApp(
+            await using var app = new FileWatcherApp(
                 Constants.ConfigFileName,
                 webServer: LogWebServerPluginLoader.Load(options.DisableWeb)
             );

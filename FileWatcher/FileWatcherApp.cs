@@ -19,7 +19,7 @@ internal sealed class FileWatcherApp(
     IFileSystem? fileSystem = null,
     ILogWebServer? webServer = null,
     IConsole? console = null
-) : IDisposable
+) : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// Orchestrates the entire application lifecycle: loading configuration, setting up
@@ -62,6 +62,26 @@ internal sealed class FileWatcherApp(
         GC.SuppressFinalize(this);
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+
+        Task[] tasksToWait = [.. _activeTasks.Keys];
+        if (tasksToWait.Length > 0)
+        {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await Task.WhenAll(tasksToWait).WaitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                LogDebug($"Error during DisposeAsync cleanup: {ex.Message}");
+            }
+        }
+    }
+
     internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(
         StringComparer.OrdinalIgnoreCase
     );
@@ -72,6 +92,32 @@ internal sealed class FileWatcherApp(
         new(StringComparer.OrdinalIgnoreCase);
 
     internal WatchConfig Config { get; set; } = new();
+
+    private readonly ConcurrentDictionary<Task, string> _activeTasks = new();
+
+    private void TrackTask(Task task, string label)
+    {
+        _activeTasks.TryAdd(task, label);
+        task.ContinueWith(
+            t => _activeTasks.TryRemove(t, out _),
+            TaskContinuationOptions.ExecuteSynchronously
+        );
+    }
+
+    /// <summary>Prints a list of all currently active background tasks/subprocesses.</summary>
+    internal void ShowTasks()
+    {
+        var active = _activeTasks.Values.ToArray();
+        if (active.Length == 0)
+        {
+            LogService.Log(LogLevel.Info, "No active background tasks.");
+            return;
+        }
+
+        LogService.Log(LogLevel.Info, $"\nActive Tasks ({active.Length}):");
+        foreach (string label in active.OrderBy(l => l))
+            LogService.Log(LogLevel.Info, $"  - {label}");
+    }
 
     /// <summary>
     /// Reloads <c>watchconfig.json</c>, recreates all file watchers, and re-runs startup hooks.
@@ -174,9 +220,16 @@ internal sealed class FileWatcherApp(
             existing.Dispose();
         }
 
-        var cts = new CancellationTokenSource();
-        _pendingTokens[key] = cts;
-        _ = Task.Run(() => ExecuteEntryActionsAsync(entry, key, label, cts));
+        bool fireAndForget = entry.FireAndForget == true;
+        var cts = fireAndForget ? null : new CancellationTokenSource();
+        CancellationToken token = cts?.Token ?? CancellationToken.None;
+
+        if (cts != null)
+            _pendingTokens[key] = cts;
+
+        Task task = Task.Run(() => ExecuteEntryActionsAsync(entry, key, label, cts, token));
+        if (!fireAndForget)
+            TrackTask(task, label);
     }
 
     /// <summary>
@@ -197,23 +250,46 @@ internal sealed class FileWatcherApp(
 
         IEnumerable<Task> tasks = hooks.Select(async entry =>
         {
-            string name = string.IsNullOrWhiteSpace(entry.Name) ? Constants.AnonymousHookName : entry.Name;
-            Task hookTask = RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, linkedToken);
+            string name = string.IsNullOrWhiteSpace(entry.Name)
+                ? Constants.AnonymousHookName
+                : entry.Name;
+            bool fireAndForget = entry.FireAndForget == true;
+            CancellationToken hookToken = fireAndForget ? CancellationToken.None : linkedToken;
 
-            int timeout = Config.Settings.StartupTimeoutMs > 0 ? Config.Settings.StartupTimeoutMs : Constants.DefaultStartupTimeoutMs;
-            Task delayTask = Task.Delay(timeout, linkedToken);
+            Task hookTask = RunHookAsync(
+                entry.Command,
+                entry.Location,
+                entry.LogLevel,
+                name,
+                hookToken
+            );
 
-            Task completedTask = await Task.WhenAny(hookTask, delayTask);
-
-            if (completedTask == hookTask)
+            if (!fireAndForget)
             {
-                if (!linkedToken.IsCancellationRequested)
-                    LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
+                TrackTask(hookTask, name);
+
+                int timeout =
+                    Config.Settings.StartupTimeoutMs > 0
+                        ? Config.Settings.StartupTimeoutMs
+                        : Constants.DefaultStartupTimeoutMs;
+                Task delayTask = Task.Delay(timeout, linkedToken);
+
+                Task completedTask = await Task.WhenAny(hookTask, delayTask);
+
+                if (completedTask == hookTask)
+                {
+                    if (!linkedToken.IsCancellationRequested)
+                        LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
+                }
+                else
+                {
+                    if (!linkedToken.IsCancellationRequested)
+                        LogService.Log(LogLevel.Info, $"[{name}] startup hook running in background");
+                }
             }
             else
             {
-                if (!linkedToken.IsCancellationRequested)
-                    LogService.Log(LogLevel.Info, $"[{name}] startup hook running in background");
+                LogService.Log(LogLevel.Info, $"[{name}] startup hook fired (fire-and-forget)");
             }
         });
 
@@ -310,6 +386,9 @@ internal sealed class FileWatcherApp(
                 {
                     case 'r':
                         await ReloadConfigurationAsync(token);
+                        break;
+                    case 't':
+                        ShowTasks();
                         break;
                     case 'q':
                         throw new OperationCanceledException(token);
@@ -437,17 +516,18 @@ internal sealed class FileWatcherApp(
         UpdateEntry entry,
         string key,
         string label,
-        CancellationTokenSource cts
+        CancellationTokenSource? cts,
+        CancellationToken token
     )
     {
         try
         {
             int delay = Math.Max(0, Config.Settings.DebounceMs);
             LogDebug($"Delaying {delay}ms for [{label}]");
-            await Task.Delay(delay, cts.Token);
+            await Task.Delay(delay, token);
 
             LogDebug($"Debounce complete, executing actions for [{label}]");
-            await RunEntryAsync(entry, cts.Token);
+            await RunEntryAsync(entry, token);
         }
         catch (OperationCanceledException)
         {
@@ -459,8 +539,9 @@ internal sealed class FileWatcherApp(
         }
         finally
         {
-            _pendingTokens.TryRemove(new KeyValuePair<string, CancellationTokenSource>(key, cts));
-            cts.Dispose();
+            if (cts != null)
+                _pendingTokens.TryRemove(new KeyValuePair<string, CancellationTokenSource>(key, cts));
+            cts?.Dispose();
             LogDebug($"Completed actions for [{label}] and cleaned up token");
         }
     }
@@ -533,7 +614,7 @@ internal sealed class FileWatcherApp(
             ? $"Monitoring started. Dashboard: http://localhost:{port}"
             : "Monitoring started. Web dashboard disabled.";
         LogService.Log(LogLevel.Success, message);
-        LogService.Log(LogLevel.Info, "Commands: [r]eload, [q]uit, any other key for status.");
+        LogService.Log(LogLevel.Info, "Commands: [r]eload, [t]asks, [q]uit, any other key for status.");
     }
 
     private static readonly TimeSpan s_keyPollInterval = Constants.KeyPollInterval;

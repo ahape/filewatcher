@@ -55,4 +55,13 @@ public class WatchConfigTests
             Assert.NotEmpty(config!.Hooks!.OnUpdate);
         }
     }
+
+    [Fact]
+    public void FireAndForget_DeserializesSuccessfully()
+    {
+        var json = """{ "hooks": { "onStartup": [ { "command": "cmd", "fireAndForget": true } ] } }""";
+        var config = JsonSerializer.Deserialize<WatchConfig>(json, SerializerOptions);
+        Assert.NotNull(config);
+        Assert.True(config!.Hooks!.OnStartup[0].FireAndForget);
+    }
 }

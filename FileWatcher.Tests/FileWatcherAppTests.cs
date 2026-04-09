@@ -311,4 +311,54 @@ public sealed class FileWatcherAppTests : IDisposable
 
         Assert.Empty(app._directoryWatchers);
     }
+
+    [Fact]
+    public async Task DisposeAsync_WaitsForBackgroundTasks()
+    {
+        var runner = new FakeProcessRunner { DelayMs = 5000 };
+        var app = await CreateReadyApp(
+            new() { Hooks = new() { OnStartup = [new() { Command = "long", Name = "test" }] } },
+            runner
+        );
+
+        // Start hooks
+        _ = app.RunStartupHooksAsync(default);
+
+        // Wait a bit for it to be started
+        await Task.Delay(100);
+
+        // DisposeAsync should trigger cancellation and wait for the task to finish
+        var disposeTask = app.DisposeAsync().AsTask();
+        var completed = await Task.WhenAny(disposeTask, Task.Delay(2000));
+
+        Assert.Equal(disposeTask, completed);
+    }
+
+    [Fact]
+    public async Task RunStartupHooksAsync_FireAndForget_DoesNotWaitAndNotCancelledOnDispose()
+    {
+        var runner = new FakeProcessRunner { DelayMs = 1000 };
+        var app = await CreateReadyApp(
+            new()
+            {
+                Hooks = new()
+                {
+                    OnStartup = [new() { Command = "forget", FireAndForget = true }],
+                },
+            },
+            runner
+        );
+
+        // This should return immediately because it's fire and forget
+        var task = app.RunStartupHooksAsync(default);
+        await Task.WhenAny(task, Task.Delay(500));
+        Assert.True(task.IsCompleted);
+
+        // Dispose the app
+        app.Dispose();
+
+        // The hook should still be running in the background
+        await Task.Delay(1500);
+        Assert.Single(runner.Calls);
+    }
 }

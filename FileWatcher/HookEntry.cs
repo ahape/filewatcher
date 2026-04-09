@@ -23,4 +23,6 @@ public abstract record HookEntry
     /// Set to <c>None</c> to suppress all stdout. Defaults to <c>Info</c>.
     /// </summary>
     public LogLevel LogLevel { get; set; } = LogLevel.Info;
+
+    public bool? FireAndForget { get; set; }
 }
