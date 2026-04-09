@@ -6,9 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <EmbeddedResource Include="wwwroot\index.html" LogicalName="FileWatcher.wwwroot.index.html" />
-    <EmbeddedResource Include="wwwroot\styles.css" LogicalName="FileWatcher.wwwroot.styles.css" />
-    <EmbeddedResource Include="wwwroot\dashboard.js" LogicalName="FileWatcher.wwwroot.dashboard.js" />
+    <Compile Remove="**/*.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Models.cs" />
   </ItemGroup>
 </Project>

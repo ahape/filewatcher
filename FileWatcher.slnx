@@ -1,5 +1,4 @@
 <Solution>
   <Project Path="FileWatcher/FileWatcher.csproj" />
-  <Project Path="FileWatcher.Web/FileWatcher.Web.csproj" />
   <Project Path="FileWatcher.Tests/FileWatcher.Tests.csproj" />
 </Solution>

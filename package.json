@@ -1,9 +1,0 @@
-{
-  "scripts": {
-    "check": "npx ajv-cli validate --spec draft7 -s watchconfig.schema.json -d watchconfig.json"
-  },
-  "devDependencies": {
-    "ajv": "^8.18.0",
-    "ajv-cli": "^5.0.0"
-  }
-}

@@ -1,83 +1,43 @@
-# Filewatcher Project Instructions
+# FileWatcher: AI Agent Instructions
 
-This document provides context and guidelines for interacting with the `filewatcher` repository.
+This document provides context and guidelines for AI agents interacting with the `FileWatcher` repository.
 
-## Stack & Architecture
-- **Language**: C# 13, running on .NET 10.
-- **Style**: Extremely concise, modern C#. We heavily favor features that reduce boilerplate, such as:
-  - Nullable reference types
-  - Primary constructors
-  - Collection expressions (`[]`)
-  - Expression-bodied members
-  - Raw string literals (`"""..."""`)
-  - File-scoped namespaces
-- **Web Frontend**: TypeScript, HTMX, and Tailwind CSS v4. Built with esbuild and the Tailwind CLI.
+## Architectural Vision: Minimalism as a Feature
+This project has been intentionally consolidated to achieve maximum robustness with minimum code. It rejects "Enterprise C#" patterns (DI containers, heavy abstractions, multi-layered services) in favor of declarative, procedural orchestration using modern C# 13 and the .NET 10 Base Class Library.
 
-## Project Layout
-```
-FileWatcher.slnx            ← Solution file
-FileWatcher/                 ← Main application project
-  FileWatcher.csproj         ← Triggers WebFrontEnd npm build via MSBuild targets
-  Program.cs
-  FileWatcherApp.cs          ← Core orchestrator
-  HookEntry.cs               ← Abstract base for StartupEntry/UpdateEntry
-  StartupEntry.cs
-  UpdateEntry.cs
-  LogService.cs / LogLevel.cs / LogEntry.cs
-  DefaultLogWebServer.cs     ← Kestrel server; serves wwwroot/ via static file middleware
-  ShellProcessRunner.cs
-  PhysicalFileSystem.cs / PhysicalFileSystemWatcher.cs
-  ...interfaces (IConsole, IFileSystem, ILogWebServer, IProcessRunner)
-WebFrontEnd/                 ← HTMX + Tailwind CSS dashboard
-  package.json               ← esbuild, @tailwindcss/cli, htmx.org
-  tsconfig.json              ← IDE support (esbuild does the actual compilation)
-  src/
-    index.html               ← Dashboard page (references styles.css, htmx, dashboard.js)
-    input.css                ← Tailwind v4 entry point with component styles
-    dashboard.ts             ← SSE streaming, log rendering, status indicator
-  wwwroot/                   ← Build output (gitignored); copied to bin/wwwroot by MSBuild
-FileWatcher.Tests/           ← xUnit test project
-  FileWatcher.Tests.csproj
-  ...
-```
+### Critical Guidelines for Agents
+- **Minimalism First:** Do NOT introduce new files, layers, or abstractions unless absolutely unavoidable. The goal is to keep the entire system's logic in `Program.cs` and `Models.cs`.
+- **Zero Dependencies:** Favor the .NET BCL over third-party NuGet packages. This project aims for zero-maintenance and high future-proofing.
+- **Declarative Models:** All configuration should reside in the unified `Hook` record in `Models.cs`.
+- **Behavioral Testing:** When making changes, verify them using the high-level `OrchestratorTests.cs`. We prioritize end-to-end behavioral parity over implementation-specific unit tests.
 
-## Build Pipeline
-Building `FileWatcher.csproj` automatically builds the web frontend:
-1. MSBuild `BuildWebFrontEnd` target runs `npm ci` + `npm run build` in `WebFrontEnd/`.
-2. `npm run build` compiles Tailwind CSS, bundles TypeScript via esbuild, and copies `index.html` + `htmx.min.js` into `WebFrontEnd/wwwroot/`.
-3. MSBuild `CopyWwwRoot` target copies `wwwroot/**` into the output directory.
-4. At runtime, `DefaultLogWebServer` serves the dashboard via `UseDefaultFiles()` + `UseStaticFiles()`.
+## Technical Knowledge Base
 
-To rebuild just the frontend during development: `cd WebFrontEnd && npm run build`.
+### 1. Robust File Watching
+OS-level file events are notoriously noisy. FileWatcher uses three layers of validation to ensure stability:
+- **State Check:** Compares `FileInfo.Length` and `LastWriteTimeUtc` against a local cache to filter spurious OS "Modified" events where the file hasn't actually changed.
+- **Zero-Byte Filter:** Ignores zero-byte files (mid-write truncations).
+- **Atomic Save Detection:** Listens for `Renamed` events alongside `Changed` and `Created` to support modern IDEs (VS Code, JetBrains) that write to a temporary swap file and then rename it.
 
-## Core Guidelines
-- **Project Structure**: Maintain a strict **one-class-per-file** structure.
-- **Formatting**: You can format all of the csharp files via the command: `dnx -y csharpier format .`.
-- **Dependencies**: The project depends on `Microsoft.AspNetCore.App` for the built-in web server. Unless completely unavoidable, rely solely on built-in .NET SDK packages. The web frontend uses npm packages (`esbuild`, `@tailwindcss/cli`, `htmx.org`) but these are dev/build-time only.
-- **Testing**: Maintain high test coverage using xUnit in the `FileWatcher.Tests` project. To run tests, simply execute `dotnet test`.
-- **Manual Testing**: When testing the application manually (e.g., via `dotnet run`), always append `--exit-after-startup` so you don't wait on the process indefinitely.
+### 2. Async Debouncing
+To prevent rapid-fire triggers (e.g., during a batch file copy), the system uses a `ConcurrentDictionary` of `CancellationTokenSource`. 
+- Every event cancels the previous pending action for that specific `Source|Command` key.
+- A new task is spawned with a `Task.Delay(DebounceMs)`.
+- If no further events occur within the window, the command is executed.
 
-## Member Ordering
-All top-level `*.cs` files must order their members using a three-level sort:
+### 3. Unified Hook Pipeline
+The system uses a single `Hook` model for both `onStartup` and `onUpdate`. Every hook follows a consistent execution pipeline:
+1. **Source Check:** If a `Source` is provided (Update Hook), it ensures the file exists.
+2. **Copy Phase:** If `CopyTo` is defined, the file is copied to the destination, creating directories if needed.
+3. **Execution Phase:** If `Command` is defined, it spawns a subprocess and pipes `stdout`/`stderr` to the console with color-coded prefixes.
 
-1. **Static after instance**
-2. **Access level** (within static/instance): `public > internal > protected > private`
-3. **Member kind** (within each access level): `Const > Field > Ctor > Dtor > Delegate > Event > Enum > Interface > Prop > Indexer > Method > Struct > Class`
+## Modern C# Usage
+- **Primary Constructors:** Used in `Models.cs` for extreme brevity.
+- **Collection Expressions (`[]`):** Preferred for all array/list initializations.
+- **Local Functions:** Used in `Program.cs` for logic encapsulation without the overhead of private methods.
+- **Raw String Literals:** Used for multi-line strings and JSON samples.
 
-Do **not** add decorative separator comments (e.g. `// ── Static, Private ──`). The ordering itself provides sufficient structure.
-
-## Method Size Limit
-No method may span more than **35 lines** (measured from the method signature to its closing brace, inclusive). When a method exceeds this limit, extract well-named private helpers. Prefer extracting cohesive chunks of logic (validation, I/O, mapping) rather than arbitrary splits.
-
-## Features & Goals
-- The core goal of this project is to provide a simple, agnostic "on[Event] -> someAction" pipeline.
-- **Do not introduce opinionated, baked-in conventions** (no opinions outside the realm of executing user-configured commands or copies on file events).
-- The system supports triggering file copies (`CopyTo`) and arbitrary subprocess commands (`Command`) with output piped to the main thread's stdout.
-- Both `StartupEntry` and `UpdateEntry` extend the abstract `HookEntry` base record, which provides shared `Name`, `Command`, `Location`, and `LogLevel` properties.
-- Per-entry `name` (optional) is shown in log prefixes to identify which subprocess produced output (e.g., `[tsc-watcher]` instead of `[Hook]`).
-- Per-entry `logLevel` (defaulting to `Info`) controls the log level of hook stdout. Set to `None` to suppress all output from a hook — useful for long-running background processes like compilers in watch mode.
-- Multiple `onUpdate` entries can watch the same source file; each gets independent debounce timers and actions.
-- It features a built-in lightweight Kestrel web server (`DefaultLogWebServer.cs`) that serves an HTMX + Tailwind CSS dashboard from `wwwroot/` and broadcasts logs in real-time via Server-Sent Events (SSE).
-- Handles spurious OS-level events by explicitly validating state changes (Size, LastWriteTime) against an internal `_fileStates` dictionary. Zero-byte files (mid-write truncations) are also filtered out.
-- Detects saves from editors that use "atomic save" (write-temp-then-rename) such as Visual Studio, VS Code, JetBrains IDEs, and vim by listening for `Renamed` events in addition to `Changed` and `Created`.
-- **Non-blocking Lifecycle**: The web server and file monitoring start immediately. Startup hooks run in parallel to avoid blocking the main application loop, which is critical for long-running watch processes in hooks.
+## Validation & Testing
+- To run the full system verification: `dotnet test`.
+- To test the app manually: `dotnet run --project FileWatcher/FileWatcher.csproj -- [config.json] [--exit-after-startup]`.
+- Always normalize paths to absolute versions during config loading to ensure reliable matching across different working directories.
