@@ -68,6 +68,11 @@
           "type": "string",
           "description": "Working directory for the command. Defaults to the current directory."
         },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "When false, this entry is skipped entirely."
+        },
         "logLevel": {
           "type": "string",
           "enum": ["None", "Debug", "Info", "Success", "Warning", "Error", "Copy"],

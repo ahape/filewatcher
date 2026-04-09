@@ -64,4 +64,16 @@ public class WatchConfigTests
         Assert.NotNull(config);
         Assert.True(config!.Hooks!.OnStartup[0].FireAndForget);
     }
+
+    [Fact]
+    public void StartupEnabled_DeserializesSuccessfully()
+    {
+        var json =
+            """{ "hooks": { "onStartup": [ { "command": "cmd-1" }, { "command": "cmd-2", "enabled": false }, { "command": "cmd-3", "enabled": true } ] } }""";
+        var config = JsonSerializer.Deserialize<WatchConfig>(json, SerializerOptions);
+        Assert.NotNull(config);
+        Assert.Null(config!.Hooks!.OnStartup[0].Enabled);
+        Assert.False(config.Hooks.OnStartup[1].Enabled);
+        Assert.True(config.Hooks.OnStartup[2].Enabled);
+    }
 }

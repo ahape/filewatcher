@@ -78,6 +78,7 @@ Keep the console window open; Filewatcher writes a short log each time it trigge
   - `name` (optional): Label shown in log prefixes to identify this hook's output (e.g., `[tsc-watcher]`). Defaults to `[Hook]`.
   - `command`: The shell command to execute.
   - `location` (optional): The working directory for the command.
+  - `enabled` (optional): Toggle to `false` to skip the entry without deleting it (defaults to `true`).
   - `logLevel` (optional): Log level for this hook's output. Set to `"None"` to suppress all stdout. Defaults to `"Info"`.
 
 - **`hooks.onUpdate`**: Actions executed after a watched file changes. Multiple entries can target the same source file; each gets independent debounce timers and actions.

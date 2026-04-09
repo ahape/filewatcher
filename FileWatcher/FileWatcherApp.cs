@@ -244,56 +244,11 @@ internal sealed class FileWatcherApp(
         _hooksCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         CancellationToken linkedToken = _hooksCts.Token;
 
-        StartupEntry[] hooks = [.. Config.Hooks?.OnStartup ?? []];
+        StartupEntry[] hooks = [.. (Config.Hooks?.OnStartup ?? []).Where(IsEnabled)];
         if (hooks.Length == 0)
             return;
 
-        IEnumerable<Task> tasks = hooks.Select(async entry =>
-        {
-            string name = string.IsNullOrWhiteSpace(entry.Name)
-                ? Constants.AnonymousHookName
-                : entry.Name;
-            bool fireAndForget = entry.FireAndForget == true;
-            CancellationToken hookToken = fireAndForget ? CancellationToken.None : linkedToken;
-
-            Task hookTask = RunHookAsync(
-                entry.Command,
-                entry.Location,
-                entry.LogLevel,
-                name,
-                hookToken
-            );
-
-            if (!fireAndForget)
-            {
-                TrackTask(hookTask, name);
-
-                int timeout =
-                    Config.Settings.StartupTimeoutMs > 0
-                        ? Config.Settings.StartupTimeoutMs
-                        : Constants.DefaultStartupTimeoutMs;
-                Task delayTask = Task.Delay(timeout, linkedToken);
-
-                Task completedTask = await Task.WhenAny(hookTask, delayTask);
-
-                if (completedTask == hookTask)
-                {
-                    if (!linkedToken.IsCancellationRequested)
-                        LogService.Log(LogLevel.Info, $"[{name}] startup hook executed");
-                }
-                else
-                {
-                    if (!linkedToken.IsCancellationRequested)
-                        LogService.Log(LogLevel.Info, $"[{name}] startup hook running in background");
-                }
-            }
-            else
-            {
-                LogService.Log(LogLevel.Info, $"[{name}] startup hook fired (fire-and-forget)");
-            }
-        });
-
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(hooks.Select(entry => RunStartupHookAsync(entry, linkedToken)));
     }
 
     /// <summary>
@@ -371,6 +326,40 @@ internal sealed class FileWatcherApp(
             LogService.Log(LogLevel.Debug, message);
         }
     }
+
+    private async Task RunStartupHookAsync(StartupEntry entry, CancellationToken token)
+    {
+        string name = string.IsNullOrWhiteSpace(entry.Name) ? Constants.AnonymousHookName : entry.Name;
+        bool fireAndForget = entry.FireAndForget == true;
+        CancellationToken hookToken = fireAndForget ? CancellationToken.None : token;
+
+        Task hookTask = RunHookAsync(entry.Command, entry.Location, entry.LogLevel, name, hookToken);
+        if (fireAndForget)
+        {
+            LogService.Log(LogLevel.Info, $"[{name}] startup hook fired (fire-and-forget)");
+            return;
+        }
+
+        TrackTask(hookTask, name);
+        await LogStartupHookStateAsync(hookTask, name, token);
+    }
+
+    private async Task LogStartupHookStateAsync(Task hookTask, string name, CancellationToken token)
+    {
+        Task completedTask = await Task.WhenAny(hookTask, Task.Delay(GetStartupTimeout(), token));
+        if (token.IsCancellationRequested)
+            return;
+
+        string message = completedTask == hookTask
+            ? $"[{name}] startup hook executed"
+            : $"[{name}] startup hook running in background";
+        LogService.Log(LogLevel.Info, message);
+    }
+
+    private int GetStartupTimeout() =>
+        Config.Settings.StartupTimeoutMs > 0
+            ? Config.Settings.StartupTimeoutMs
+            : Constants.DefaultStartupTimeoutMs;
 
     /// <summary>
     /// Polls the console for key presses at a fixed interval until the token is cancelled.
@@ -638,4 +627,6 @@ internal sealed class FileWatcherApp(
         string.IsNullOrWhiteSpace(entry.Description)
             ? Path.GetFileName(entry.Source)
             : entry.Description;
+
+    private static bool IsEnabled(StartupEntry entry) => entry.Enabled != false;
 }

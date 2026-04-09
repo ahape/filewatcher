@@ -178,6 +178,28 @@ public sealed class FileWatcherAppTests : IDisposable
     }
 
     [Fact]
+    public async Task RunStartupHooksAsync_SkipsDisabledHooks()
+    {
+        var r = new FakeProcessRunner();
+        var app = await CreateReadyApp(new()
+        {
+            Hooks = new()
+            {
+                OnStartup =
+                [
+                    new() { Command = "h1" },
+                    new() { Command = "h2", Enabled = false },
+                    new() { Command = "h3", Enabled = true },
+                ],
+            },
+        }, r);
+
+        await app.RunStartupHooksAsync(default);
+
+        Assert.Equal(["h1", "h3"], r.Calls.Select(call => call.Command).ToArray());
+    }
+
+    [Fact]
     public async Task ReloadConfigurationAsync_CancelsOldHooks()
     {
         var r = new FakeProcessRunner { DelayMs = 1000 };
