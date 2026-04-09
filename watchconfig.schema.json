@@ -60,13 +60,9 @@
           "type": "string",
           "description": "Optional label shown in log prefixes to identify this hook's output (e.g., 'tsc-watcher')."
         },
-        "command": {
+        "description": {
           "type": "string",
-          "description": "Shell command to execute."
-        },
-        "location": {
-          "type": "string",
-          "description": "Working directory for the command. Defaults to the current directory."
+          "description": "Human-readable description shown in summaries and warnings."
         },
         "enabled": {
           "type": "boolean",
@@ -78,6 +74,14 @@
           "enum": ["None", "Debug", "Info", "Success", "Warning", "Error", "Copy"],
           "default": "Info",
           "description": "Log level for this entry's hook output. Set to 'None' to suppress all output."
+        },
+        "location": {
+          "type": "string",
+          "description": "Working directory for the command. Defaults to the current directory."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute."
         }
       },
       "required": ["command"],
@@ -90,6 +94,10 @@
         "name": {
           "type": "string",
           "description": "Optional label shown in log prefixes to identify this hook's output (e.g., 'lint')."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description shown in summaries and warnings."
         },
         "source": {
           "type": "string",
@@ -111,10 +119,6 @@
         "location": {
           "type": "string",
           "description": "Working directory for the command. Defaults to the current directory."
-        },
-        "description": {
-          "type": "string",
-          "description": "Human-readable description shown in summaries and warnings."
         },
         "logLevel": {
           "type": "string",
