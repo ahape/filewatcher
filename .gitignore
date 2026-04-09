@@ -10,3 +10,4 @@ WebFrontEnd/wwwroot/
 .claude/*.local.*
 .codex
 .gemini
+.startup-content/
