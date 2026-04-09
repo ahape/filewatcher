@@ -1,8 +1,11 @@
 namespace FileWatcher;
 
-/// <summary>A command to run on application startup or config reload.</summary>
-public sealed record StartupEntry : HookEntry
-{
-    /// <summary>When <c>false</c> the entry is skipped entirely.</summary>
-    public bool? Enabled { get; set; }
-}
+public sealed record StartupEntry(
+    string Command,
+    string Name = "",
+    string Location = "",
+    LogLevel LogLevel = LogLevel.Info,
+    bool? FireAndForget = null,
+    bool? Enabled = true,
+    string? CopyTo = null
+) : HookEntry(Command, Name, Location, LogLevel, FireAndForget, CopyTo);

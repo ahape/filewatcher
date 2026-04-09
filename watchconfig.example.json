@@ -8,7 +8,7 @@
     "onStartup": [
       {
         "name": "Azurite",
-        "command": "azurite --silent --location ./startup-content/azurite/workspace --debug ./startup-content/azurite/debug.log",
+        "command": "azurite --silent --location ./.startup-content/azurite/workspace --debug ./.startup-content/azurite/debug.log",
         "logLevel": "Info"
       },
       {

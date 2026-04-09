@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
+
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,693 +14,170 @@ namespace FileWatcher;
 
 internal sealed class FileWatcherApp(
     string configPath,
-    IProcessRunner? processRunner = null,
-    IFileSystem? fileSystem = null,
+    IProcessRunner? runner = null,
+    IFileSystem? fs = null,
     ILogWebServer? webServer = null,
     IConsole? console = null
-) : IDisposable, IAsyncDisposable
+) : IDisposable
 {
-    /// <summary>
-    /// Orchestrates the entire application lifecycle: loading configuration, setting up
-    /// watchers, running startup hooks, starting the web server, and entering the console
-    /// command loop.
-    /// </summary>
+    private readonly string _configPath = configPath;
+    private readonly IProcessRunner _runner = runner ?? new ShellProcessRunner();
+    private readonly IFileSystem _fs = fs ?? new PhysicalFileSystem();
+    private readonly ILogWebServer _web = webServer ?? new NullLogWebServer();
+    private readonly IConsole _con = console ?? new SystemConsole();
+    internal readonly ConcurrentDictionary<string, IFileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
+    internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, (DateTime Time, long Size)> _states = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<Task, (string Label, int? Pid)> _tasks = new();
+    internal WatchConfig _config = new();
+    private CancellationTokenSource? _hooksCts;
+
     public async Task RunAsync(CancellationToken token, bool exitAfterStartup = false)
     {
-        await LoadConfigurationAsync(token);
+        await LoadConfigAsync(token);
         SetupWatchers();
-
-        int port = GetDashboardPort();
-        if (_webServer.IsEnabled)
-            _ = _webServer.StartAsync(port, token);
-        PrintWelcome(_webServer.IsEnabled, port);
-
-        if (exitAfterStartup)
-        {
-            await RunStartupHooksAsync(token);
-        }
-        else
-        {
-            await Task.WhenAll(RunStartupHooksAsync(token), RunConsoleLoopAsync(token));
-        }
+        if (_web.IsEnabled) _ = _web.StartAsync(_config.Settings.DashboardPort, token);
+        LogService.Log(LogLevel.Success, $"Monitoring started. Dashboard: http://localhost:{_config.Settings.DashboardPort}");
+        if (exitAfterStartup) await RunHooksAsync(token);
+        else await Task.WhenAll(RunHooksAsync(token), RunConsoleLoopAsync(token));
     }
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-        foreach (CancellationTokenSource cts in _pendingTokens.Values)
-        {
-            cts.Cancel();
-            cts.Dispose();
-        }
         _hooksCts?.Cancel();
-        _hooksCts?.Dispose();
-        DisposeWatchers();
-        _disposed = true;
-        GC.SuppressFinalize(this);
+        foreach (var w in _watchers.Values) w.Dispose();
+        foreach (var cts in _pending.Values) cts.Cancel();
     }
 
-    public async ValueTask DisposeAsync()
+    internal async Task LoadConfigAsync(CancellationToken token)
     {
-        Dispose();
-
-        Task[] tasksToWait = [.. _activeTasks.Keys];
-        if (tasksToWait.Length > 0)
+        if (!_fs.FileExists(_configPath)) throw new FileNotFoundException(_configPath);
+        await using var stream = _fs.OpenRead(_configPath);
+        _config = await JsonSerializer.DeserializeAsync<WatchConfig>(stream, new JsonSerializerOptions
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                await Task.WhenAll(tasksToWait).WaitAsync(timeoutCts.Token);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                LogDebug($"Error during DisposeAsync cleanup: {ex.Message}");
-            }
+            PropertyNameCaseInsensitive = true,
+            AllowTrailingCommas = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        }, token) ?? new();
+        foreach (var u in _config.Hooks?.OnUpdate ?? [])
+        {
+            u.Source = Path.GetFullPath(u.Source);
+            if (u.CopyTo != null) u.CopyTo = Path.GetFullPath(u.CopyTo);
         }
     }
 
-    internal readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingTokens = new(
-        StringComparer.OrdinalIgnoreCase
-    );
-    internal readonly ConcurrentDictionary<string, IFileSystemWatcher> _directoryWatchers = new(
-        StringComparer.OrdinalIgnoreCase
-    );
-    internal readonly ConcurrentDictionary<string, (DateTime LastWrite, long Size)> _fileStates =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    internal WatchConfig Config { get; set; } = new();
-
-    private readonly ConcurrentDictionary<Task, ActiveTaskInfo> _activeTasks = new();
-
-    private void TrackTask(Task task, ActiveTaskInfo taskInfo)
-    {
-        _activeTasks.TryAdd(task, taskInfo);
-        task.ContinueWith(
-            t => _activeTasks.TryRemove(t, out _),
-            TaskContinuationOptions.ExecuteSynchronously
-        );
-    }
-
-    /// <summary>Prints a list of all currently active background tasks/subprocesses.</summary>
-    internal void ShowTasks()
-    {
-        ActiveTaskInfo[] active = [.. _activeTasks.Values];
-        if (active.Length == 0)
-        {
-            LogService.Log(LogLevel.Info, "No active background tasks.");
-            return;
-        }
-
-        LogService.Log(LogLevel.Info, BuildTasksTable(active));
-    }
-
-    /// <summary>
-    /// Reloads <c>watchconfig.json</c>, recreates all file watchers, and re-runs startup hooks.
-    /// On failure the error is logged and the previous configuration remains active.
-    /// </summary>
-    internal async Task ReloadConfigurationAsync(CancellationToken token)
-    {
-        try
-        {
-            LogService.Log(LogLevel.Info, "Reloading configuration...");
-            await LoadConfigurationAsync(token);
-            SetupWatchers();
-            await RunStartupHooksAsync(token);
-            LogService.Log(LogLevel.Success, "Configuration reloaded.");
-        }
-        catch (Exception ex)
-        {
-            LogService.Log(LogLevel.Error, $"Failed to reload: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Reads and deserializes <c>watchconfig.json</c> from <see cref="_configPath"/>,
-    /// replacing the current <see cref="Config"/>.
-    /// </summary>
-    internal async Task LoadConfigurationAsync(CancellationToken token)
-    {
-        if (!_fs.FileExists(_configPath))
-            throw new FileNotFoundException($"Configuration file not found: {_configPath}");
-
-        await using Stream stream = _fs.OpenRead(_configPath);
-        Config =
-            await JsonSerializer.DeserializeAsync<WatchConfig>(stream, s_serializerOptions, token)
-            ?? throw new InvalidOperationException("Configuration file is empty or malformed.");
-        Config.Settings ??= new WatchSettings();
-        Config.Hooks ??= new WatchHooks();
-    }
-
-    /// <summary>
-    /// Translates config entries into FileSystemWatchers, grouping multiple monitored
-    /// files by their parent directory to minimize OS handles.
-    /// </summary>
     internal void SetupWatchers()
     {
-        DisposeWatchers();
-        var grouped = new Dictionary<string, List<UpdateEntry>>(StringComparer.OrdinalIgnoreCase);
-        foreach (UpdateEntry entry in (Config.Hooks?.OnUpdate ?? []).Where(e => e.Enabled))
-            TryMapEntry(entry, grouped);
-        _directoryEntries = new ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>>(
-            grouped.ToDictionary(g => g.Key, g => (IReadOnlyList<UpdateEntry>)g.Value.AsReadOnly()),
-            StringComparer.OrdinalIgnoreCase
-        );
-        LogDebug($"SetupWatchers completed with {_directoryWatchers.Count} active watchers");
-    }
-
-    /// <summary>
-    /// Core event handler for OS-level file system events. Filters spurious/duplicate
-    /// events and schedules actions for all matching entries.
-    /// </summary>
-    /// <remarks>
-    /// <b>OS quirk — duplicate events:</b> Windows (and some Linux inotify drivers) frequently
-    /// fire multiple <c>Changed</c> events for a single logical save. The method delegates to
-    /// <see cref="TryUpdateAndValidateState"/> to deduplicate them by comparing (Size, LastWriteTime)
-    /// against <see cref="_fileStates"/>.
-    /// <para/>
-    /// <b>OS quirk — atomic/safe save:</b> Editors like Visual Studio, VS Code, and JetBrains
-    /// IDEs use an "atomic save" strategy: write to a temp file, rename the original to a backup,
-    /// then rename the temp to the original filename. The watched file is never <em>modified</em> —
-    /// it is <em>replaced</em> via rename. Without listening for <c>Renamed</c> events, these saves
-    /// would be silently missed. <see cref="RenamedEventArgs"/> extends <see cref="FileSystemEventArgs"/>,
-    /// so the <c>FullPath</c> property gives us the new (target) filename, which is the one we match
-    /// against configured sources.
-    /// </remarks>
-    internal void HandleFileEvent(FileSystemEventArgs args)
-    {
-        LogDebug($"[OS Event] {args.ChangeType} -> {args.FullPath}");
-
-        List<UpdateEntry>? matching = FindMatchingEntries(args.FullPath);
-        if (matching == null || !TryUpdateAndValidateState(args.FullPath))
-            return;
-
-        foreach (UpdateEntry entry in matching)
-            ScheduleActions(entry);
-    }
-
-    /// <summary>
-    /// Debounces and queues the actual work (copying/command execution).
-    /// A new event always cancels a pending operation for the same entry,
-    /// resetting the debounce timer.
-    /// </summary>
-    internal void ScheduleActions(UpdateEntry entry)
-    {
-        string key = EntryKey(entry);
-        string label = EntryLabel(entry);
-        LogDebug($"Scheduling actions for [{label}]");
-        if (_pendingTokens.TryRemove(key, out CancellationTokenSource? existing))
+        foreach (var w in _watchers.Values) w.Dispose();
+        _watchers.Clear();
+        var hooks = _config.Hooks?.OnUpdate?.Where(e => e.Enabled) ?? [];
+        foreach (var entry in hooks)
         {
-            LogDebug($"Cancelling previous pending actions for [{label}]");
-            existing.Cancel();
-            existing.Dispose();
+            var dir = Path.GetDirectoryName(entry.Source)!;
+            _watchers.GetOrAdd(dir, d =>
+            {
+                var w = _fs.CreateWatcher(d, Constants.WatcherNotifyFilters);
+                w.EnableRaisingEvents = true;
+                w.Changed += (_, e) => HandleEvent(e); w.Created += (_, e) => HandleEvent(e); w.Renamed += (_, e) => HandleEvent(e);
+                return w;
+            });
         }
-
-        bool fireAndForget = entry.FireAndForget == true;
-        var cts = fireAndForget ? null : new CancellationTokenSource();
-        CancellationToken token = cts?.Token ?? CancellationToken.None;
-
-        if (cts != null)
-            _pendingTokens[key] = cts;
-
-        var taskInfo = new ActiveTaskInfo(label);
-        Task task = Task.Run(() =>
-            ExecuteEntryActionsAsync(entry, key, label, cts, token, taskInfo.SetProcessId)
-        );
-        if (!fireAndForget)
-            TrackTask(task, taskInfo);
     }
 
-    /// <summary>
-    /// Runs all startup hooks in parallel.
-    /// Cancels any previous startup hooks if this is a reload.
-    /// Returns a task that completes when all hooks have finished or were cancelled.
-    /// </summary>
-    internal async Task RunStartupHooksAsync(CancellationToken token)
+    internal void HandleEvent(FileSystemEventArgs e)
     {
-        _hooksCts?.Cancel();
-        _hooksCts?.Dispose();
-        _hooksCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        CancellationToken linkedToken = _hooksCts.Token;
-
-        StartupEntry[] hooks = [.. (Config.Hooks?.OnStartup ?? []).Where(IsEnabled)];
-        if (hooks.Length == 0)
-            return;
-
-        await Task.WhenAll(hooks.Select(entry => RunStartupHookAsync(entry, linkedToken)));
+        var entries = _config.Hooks?.OnUpdate?.Where(u => u.Enabled && string.Equals(u.Source, e.FullPath, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (entries == null || entries.Count == 0 || !ShouldTrigger(e.FullPath)) return;
+        foreach (var entry in entries) ScheduleAction(entry);
     }
 
-    /// <summary>
-    /// Executes a single shell <paramref name="command"/> in <paramref name="location"/>
-    /// (or the current directory when blank), routing output to the log and surfacing a
-    /// warning on non-zero exit codes.
-    /// </summary>
-    internal async Task RunHookAsync(
-        string command,
-        string location,
-        LogLevel hookLogLevel,
-        string name,
-        CancellationToken token,
-        Action<int>? onStarted = null
-    )
+    private bool ShouldTrigger(string path)
     {
-        if (string.IsNullOrWhiteSpace(command))
-            return;
         try
         {
-            string workingDirectory = string.IsNullOrWhiteSpace(location)
-                ? Environment.CurrentDirectory
-                : location;
-            bool silent = hookLogLevel == LogLevel.None;
-            string tag = string.IsNullOrWhiteSpace(name) ? "Hook" : name;
-            int exitCode = await _processRunner.RunAsync(
-                command,
-                workingDirectory,
-                silent ? _ => { } : line => LogService.Log(hookLogLevel, $"[{tag}] {line}"),
-                silent ? _ => { } : line => LogService.Log(LogLevel.Error, $"[{tag} Error] {line}"),
-                token,
-                onStarted
-            );
-            if (exitCode != 0 && !silent)
-                LogService.Log(LogLevel.Warning, $"[{tag}] exited with code {exitCode}");
+            var state = _fs.GetFileInfo(path);
+            if (state.Length == 0 || (_states.TryGetValue(path, out var prev) && prev == state)) return false;
+            _states[path] = state; return true;
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
+        catch { return false; }
+    }
+
+    internal void ScheduleAction(UpdateEntry entry)
+    {
+        var key = $"{entry.Source}|{entry.Command}";
+        if (_pending.TryRemove(key, out var old)) { old.Cancel(); old.Dispose(); }
+        var cts = new CancellationTokenSource(); _pending[key] = cts;
+        var task = Task.Run(async () =>
         {
-            LogService.Log(LogLevel.Error, $"Hook failed: {ex.Message}");
-        }
+            try
+            {
+                await Task.Delay(_config.Settings.DebounceMs, cts.Token);
+                await RunHookAsync(entry, cts.Token);
+            }
+            finally { _pending.TryRemove(key, out _); cts.Dispose(); }
+        });
+        Track(task, entry.Name ?? Path.GetFileName(entry.Source));
     }
 
-    /// <summary>Logs a one-line status summary showing the active watcher and pending-action counts.</summary>
-    internal void ShowStatus()
+    internal async Task RunHooksAsync(CancellationToken token)
     {
-        LogService.Log(
-            LogLevel.Info,
-            $"\nStatus at {DateTime.Now:T}: {_directoryWatchers.Count} watchers, {_pendingTokens.Count} pending."
-        );
+        _hooksCts?.Cancel(); _hooksCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var hooks = _config.Hooks?.OnStartup?.Where(h => h.Enabled != false) ?? [];
+        await Task.WhenAll(hooks.Select(h => RunHookAsync(h, _hooksCts.Token)));
     }
 
-    private readonly string _configPath = configPath;
-    private readonly IProcessRunner _processRunner = processRunner ?? new ShellProcessRunner();
-    private readonly IFileSystem _fs = fileSystem ?? new PhysicalFileSystem();
-    private readonly ILogWebServer _webServer = webServer ?? new NullLogWebServer();
-    private readonly IConsole _console = console ?? new SystemConsole();
-    private CancellationTokenSource? _hooksCts;
-    private ConcurrentDictionary<string, IReadOnlyList<UpdateEntry>> _directoryEntries = new(
-        StringComparer.OrdinalIgnoreCase
-    );
-    private bool _disposed;
-
-    /// <summary>
-    /// Writes <paramref name="message"/> at <see cref="LogLevel.Debug"/> only when the
-    /// configured log level is <c>Debug</c> or <c>Trace</c>.
-    /// </summary>
-    private void LogDebug(string message)
+    internal async Task RunHookAsync(HookEntry h, CancellationToken token)
     {
-        if (
-            string.Equals(Config.Settings.LogLevel, "Debug", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(Config.Settings.LogLevel, "Trace", StringComparison.OrdinalIgnoreCase)
-        )
+        if (h.CopyTo != null && h is UpdateEntry u)
         {
-            LogService.Log(LogLevel.Debug, message);
+            Directory.CreateDirectory(Path.GetDirectoryName(h.CopyTo)!);
+            File.Copy(u.Source, h.CopyTo, true);
+            LogService.Log(LogLevel.Copy, $"Copied {Path.GetFileName(u.Source)}");
         }
+        if (string.IsNullOrWhiteSpace(h.Command)) return;
+        var tag = string.IsNullOrWhiteSpace(h.Name) ? "Hook" : h.Name;
+        Task? t = null;
+        var task = _runner.RunAsync(h.Command, h.Location,
+            l => LogService.Log(h.LogLevel, $"[{tag}] {l}"),
+            l => LogService.Log(LogLevel.Error, $"[{tag}] {l}"),
+            token, pid => { if (t != null) _tasks[t] = (tag, pid); });
+        t = task; Track(t, tag);
+        await t;
     }
 
-    private async Task RunStartupHookAsync(StartupEntry entry, CancellationToken token)
+    private void Track(Task t, string label)
     {
-        string name = string.IsNullOrWhiteSpace(entry.Name)
-            ? Constants.AnonymousHookName
-            : entry.Name;
-        bool fireAndForget = entry.FireAndForget == true;
-        CancellationToken hookToken = fireAndForget ? CancellationToken.None : token;
-        var taskInfo = new ActiveTaskInfo(name);
-
-        Task hookTask = RunHookAsync(
-            entry.Command,
-            entry.Location,
-            entry.LogLevel,
-            name,
-            hookToken,
-            taskInfo.SetProcessId
-        );
-        if (fireAndForget)
-        {
-            LogService.Log(LogLevel.Info, $"[{name}] startup hook fired (fire-and-forget)");
-            return;
-        }
-
-        TrackTask(hookTask, taskInfo);
-        await LogStartupHookStateAsync(hookTask, name, token);
+        _tasks[t] = (label, null);
+        t.ContinueWith(task => _tasks.TryRemove(task, out _));
     }
 
-    private async Task LogStartupHookStateAsync(Task hookTask, string name, CancellationToken token)
-    {
-        Task completedTask = await Task.WhenAny(hookTask, Task.Delay(GetStartupTimeout(), token));
-        if (token.IsCancellationRequested)
-            return;
-
-        string message =
-            completedTask == hookTask
-                ? $"[{name}] startup hook executed"
-                : $"[{name}] startup hook running in background";
-        LogService.Log(LogLevel.Info, message);
-    }
-
-    private int GetStartupTimeout() =>
-        Config.Settings.StartupTimeoutMs > 0
-            ? Config.Settings.StartupTimeoutMs
-            : Constants.DefaultStartupTimeoutMs;
-
-    /// <summary>
-    /// Polls the console for key presses at a fixed interval until the token is cancelled.
-    /// </summary>
     private async Task RunConsoleLoopAsync(CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
+        try
         {
-            if (_console.KeyAvailable)
+            while (!token.IsCancellationRequested)
             {
-                ConsoleKeyInfo key = _console.ReadKey(true);
-                switch (char.ToLowerInvariant(key.KeyChar))
+                if (_con.KeyAvailable)
                 {
-                    case 'r':
-                        await ReloadConfigurationAsync(token);
-                        break;
-                    case 't':
-                        ShowTasks();
-                        break;
-                    case 'q':
-                        throw new OperationCanceledException(token);
-                    default:
-                        ShowStatus();
-                        break;
+                    switch (char.ToLower(_con.ReadKey(true).KeyChar))
+                    {
+                        case 'r': await LoadConfigAsync(token); SetupWatchers(); await RunHooksAsync(token); break;
+                        case 't': ShowTasks(); break;
+                        case 'q': return;
+                        default: LogService.Log(LogLevel.Info, $"Status: {_watchers.Count} watchers, {_tasks.Count} tasks."); break;
+                    }
                 }
+                await Task.Delay(Constants.KeyPollInterval, token);
             }
-            await Task.Delay(s_keyPollInterval, token);
         }
+        catch (OperationCanceledException) { }
     }
 
-    /// <summary>
-    /// Instantiates and wires an <see cref="IFileSystemWatcher"/> for
-    /// <paramref name="directory"/>, routing events to <see cref="HandleFileEvent"/>.
-    /// </summary>
-    /// <remarks>
-    /// Three event types are subscribed:
-    /// <list type="bullet">
-    ///   <item><c>Changed</c> — covers normal in-place writes (e.g., <c>notepad</c>, build tools).</item>
-    ///   <item><c>Created</c> — covers files that are deleted and recreated rather than overwritten.</item>
-    ///   <item><c>Renamed</c> — covers editors that use "atomic save" (write-temp-then-rename),
-    ///         including Visual Studio, VS Code, JetBrains IDEs, and <c>vim</c>. Without this,
-    ///         saves from these editors would be silently missed because the watched file is never
-    ///         modified — it is replaced via an OS rename operation.</item>
-    /// </list>
-    /// </remarks>
-    private IFileSystemWatcher CreateWatcher(string directory)
+    internal void ShowTasks()
     {
-        LogDebug($"Creating OS FileSystemWatcher for directory: {directory}");
-        IFileSystemWatcher watcher = _fs.CreateWatcher(directory, Constants.WatcherNotifyFilters);
-        watcher.EnableRaisingEvents = true;
-        watcher.Changed += (_, e) => HandleFileEvent(e);
-        watcher.Created += (_, e) => HandleFileEvent(e);
-        watcher.Renamed += (_, e) => HandleFileEvent(e);
-        watcher.Error += (_, e) =>
-            LogService.Log(
-                LogLevel.Error,
-                $"Watcher error in {directory}: {e.GetException().Message}"
-            );
-        return watcher;
+        if (_tasks.IsEmpty) { LogService.Log(LogLevel.Info, "No active tasks."); return; }
+        LogService.Log(LogLevel.Info, "Active Tasks:\nPID\tTask\n" + string.Join("\n", _tasks.Values.Select(v => $"{v.Pid?.ToString() ?? "-"}\t{v.Label}")));
     }
-
-    /// <summary>Returns all entries matching <paramref name="fullPath"/>, or null if none.</summary>
-    private List<UpdateEntry>? FindMatchingEntries(string fullPath)
-    {
-        string? directory = Path.GetDirectoryName(fullPath);
-        if (
-            directory == null
-            || !_directoryEntries.TryGetValue(directory, out IReadOnlyList<UpdateEntry>? entries)
-        )
-            return null;
-
-        List<UpdateEntry> matching =
-        [
-            .. entries.Where(e =>
-                string.Equals(e.Source, fullPath, StringComparison.OrdinalIgnoreCase)
-            ),
-        ];
-        if (matching.Count == 0)
-        {
-            LogDebug($"Ignoring {fullPath} (Not mapped to an active source)");
-            return null;
-        }
-        return matching;
-    }
-
-    /// <summary>
-    /// Validates that the file at <paramref name="fullPath"/> actually changed (size or
-    /// timestamp) and is non-empty. Updates <see cref="_fileStates"/> on success.
-    /// </summary>
-    /// <remarks>
-    /// <b>OS quirk — duplicate/spurious events:</b> Windows commonly fires 2–4 <c>Changed</c>
-    /// events for a single save operation. This method deduplicates them by comparing the current
-    /// (LastWriteTime, Size) tuple against the previously recorded state in <see cref="_fileStates"/>.
-    /// If nothing actually changed, the event is discarded.
-    /// <para/>
-    /// <b>OS quirk — mid-write truncation:</b> Many editors and build tools truncate a file to
-    /// zero bytes before writing new content. The OS fires a <c>Changed</c> event at the zero-byte
-    /// stage. If we acted on it, we would copy an empty file or lint empty source. A zero-byte
-    /// file is almost certainly a transient mid-write state, so we discard it and wait for the
-    /// next event that carries the real content.
-    /// <para/>
-    /// <b>OS quirk — locked files:</b> The file may be locked by the writing process at the
-    /// moment we try to read its metadata. Rather than crashing, we silently return <c>false</c>
-    /// and let the next OS event retry.
-    /// </remarks>
-    private bool TryUpdateAndValidateState(string fullPath)
-    {
-        try
-        {
-            (DateTime LastWriteTimeUtc, long Length) currentState = _fs.GetFileInfo(fullPath);
-            if (
-                _fileStates.TryGetValue(fullPath, out (DateTime LastWrite, long Size) previousState)
-                && previousState == currentState
-            )
-            {
-                LogDebug($"Ignoring {fullPath} (No size/timestamp change since last event)");
-                return false;
-            }
-
-            _fileStates[fullPath] = currentState;
-            LogDebug(
-                $"Updated tracked state for {fullPath} -> Size: {currentState.Length}, Time: {currentState.LastWriteTimeUtc}"
-            );
-
-            if (currentState.Length == 0)
-            {
-                LogDebug($"Ignoring {fullPath} (File is empty, likely mid-write)");
-                return false;
-            }
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>Awaits the debounce delay, then runs copy/command actions for the entry.</summary>
-    private async Task ExecuteEntryActionsAsync(
-        UpdateEntry entry,
-        string key,
-        string label,
-        CancellationTokenSource? cts,
-        CancellationToken token,
-        Action<int>? onProcessStarted
-    )
-    {
-        try
-        {
-            int delay = Math.Max(0, Config.Settings.DebounceMs);
-            LogDebug($"Delaying {delay}ms for [{label}]");
-            await Task.Delay(delay, token);
-
-            LogDebug($"Debounce complete, executing actions for [{label}]");
-            await RunEntryAsync(entry, token, onProcessStarted);
-        }
-        catch (OperationCanceledException)
-        {
-            LogDebug($"Action cancelled for [{label}]");
-        }
-        catch (Exception ex)
-        {
-            LogService.Log(LogLevel.Error, $"Error processing [{label}]: {ex.Message}");
-        }
-        finally
-        {
-            if (cts != null)
-                _pendingTokens.TryRemove(
-                    new KeyValuePair<string, CancellationTokenSource>(key, cts)
-                );
-            cts?.Dispose();
-            LogDebug($"Completed actions for [{label}] and cleaned up token");
-        }
-    }
-
-    /// <summary>Runs the copy and/or command actions for a single entry.</summary>
-    private async Task RunEntryAsync(
-        UpdateEntry entry,
-        CancellationToken token,
-        Action<int>? onProcessStarted
-    )
-    {
-        if (entry.CopyTo != null)
-        {
-            LogDebug($"Copying {entry.Source} to {entry.CopyTo}");
-            string? destDir = Path.GetDirectoryName(entry.CopyTo);
-            if (!string.IsNullOrEmpty(destDir))
-                _fs.CreateDirectory(destDir);
-            _fs.CopyFile(entry.Source, entry.CopyTo, overwrite: true);
-            LogService.Log(
-                LogLevel.Copy,
-                $"Copied {Path.GetFileName(entry.Source)} to {entry.CopyTo}"
-            );
-        }
-        if (!string.IsNullOrWhiteSpace(entry.Command))
-        {
-            LogDebug($"Running command: {entry.Command}");
-            await RunHookAsync(
-                entry.Command,
-                entry.Location,
-                entry.LogLevel,
-                entry.Name,
-                token,
-                onProcessStarted
-            );
-        }
-    }
-
-    /// <summary>Validates and maps a single config entry into the grouped dictionary.</summary>
-    private void TryMapEntry(UpdateEntry entry, Dictionary<string, List<UpdateEntry>> grouped)
-    {
-        if (string.IsNullOrWhiteSpace(entry.Source))
-        {
-            LogService.Log(
-                LogLevel.Warning,
-                $"Entry skipped: source is missing ({entry.Description})."
-            );
-            return;
-        }
-        if (!_fs.FileExists(entry.Source))
-        {
-            LogService.Log(LogLevel.Warning, $"Source file not found: {entry.Source}");
-            return;
-        }
-
-        string directory = Path.GetDirectoryName(entry.Source)!;
-        if (!grouped.TryGetValue(directory, out List<UpdateEntry>? list))
-        {
-            list = [];
-            grouped[directory] = list;
-        }
-        list.Add(entry);
-        _directoryWatchers.GetOrAdd(directory, CreateWatcher);
-        LogDebug($"Mapped entry '{entry.Source}' (Enabled)");
-    }
-
-    /// <summary>Disposes all active <see cref="IFileSystemWatcher"/> instances and clears the registry.</summary>
-    private void DisposeWatchers()
-    {
-        foreach (IFileSystemWatcher w in _directoryWatchers.Values)
-            w.Dispose();
-        _directoryWatchers.Clear();
-    }
-
-    private int GetDashboardPort() =>
-        Config.Settings.DashboardPort > 0
-            ? Config.Settings.DashboardPort
-            : Constants.DefaultDashboardPort;
-
-    /// <summary>Logs the startup banner with the dashboard state and available key commands.</summary>
-    internal static void PrintWelcome(bool webServerEnabled, int port)
-    {
-        string message = webServerEnabled
-            ? $"Monitoring started. Dashboard: http://localhost:{port}"
-            : "Monitoring started. Web dashboard disabled.";
-        LogService.Log(LogLevel.Success, message);
-        LogService.Log(
-            LogLevel.Info,
-            "Commands: [r]eload, [t]asks, [q]uit, any other key for status."
-        );
-    }
-
-    private static readonly TimeSpan s_keyPollInterval = Constants.KeyPollInterval;
-    private static readonly JsonSerializerOptions s_serializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
-    private static string BuildTasksTable(ActiveTaskInfo[] tasks)
-    {
-        string[][] rows =
-        [
-            .. tasks
-                .OrderBy(GetTaskSortKey)
-                .ThenBy(task => task.Label, StringComparer.OrdinalIgnoreCase)
-                .Select(CreateTaskCells),
-        ];
-        int processIdWidth = GetColumnWidth("Process ID", rows, 0);
-        int taskWidth = GetColumnWidth("Task", rows, 1);
-        string border = CreateTableBorder(processIdWidth, taskWidth);
-        string header = CreateTableRow("Process ID", "Task", processIdWidth, taskWidth);
-        string[] body =
-        [
-            .. rows.Select(row => CreateTableRow(row[0], row[1], processIdWidth, taskWidth)),
-        ];
-        string[] lines =
-        [
-            $"Active Tasks ({rows.Length}):",
-            border,
-            header,
-            border,
-            .. body,
-            border,
-        ];
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    /// <summary>
-    /// Returns a key that uniquely identifies this entry's action, so that multiple
-    /// entries watching the same source file get independent debounce timers.
-    /// </summary>
-    private static string EntryKey(UpdateEntry entry) =>
-        $"{entry.Source}|{entry.CopyTo}|{entry.Command}";
-
-    private static string EntryLabel(UpdateEntry entry) =>
-        string.IsNullOrWhiteSpace(entry.Description)
-            ? Path.GetFileName(entry.Source)
-            : entry.Description;
-
-    private static string CreateTableBorder(int firstWidth, int secondWidth) =>
-        $"+-{new string('-', firstWidth)}-+-{new string('-', secondWidth)}-+";
-
-    private static string CreateTableRow(
-        string first,
-        string second,
-        int firstWidth,
-        int secondWidth
-    ) => $"| {first.PadRight(firstWidth)} | {second.PadRight(secondWidth)} |";
-
-    private static string[] CreateTaskCells(ActiveTaskInfo task) =>
-        [task.ProcessId?.ToString() ?? "-", task.Label];
-
-    private static int GetColumnWidth(string header, string[][] rows, int column) =>
-        Math.Max(header.Length, rows.Max(row => row[column].Length));
-
-    private static int GetTaskSortKey(ActiveTaskInfo task) => task.ProcessId ?? int.MaxValue;
-
-    private static bool IsEnabled(StartupEntry entry) => entry.Enabled != false;
 }
+
+

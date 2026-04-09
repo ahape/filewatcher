@@ -2,12 +2,12 @@ using System.Collections.Generic;
 
 namespace FileWatcher;
 
-/// <summary>Container for lifecycle hook arrays.</summary>
-public sealed record WatchHooks
+public sealed record WatchHooks(
+    List<StartupEntry>? OnStartup = null,
+    List<UpdateEntry>? OnUpdate = null
+)
 {
-    /// <summary>Commands executed once when the application starts (or after a config reload).</summary>
-    public List<StartupEntry> OnStartup { get; set; } = [];
-
-    /// <summary>Entries executed after each debounced file change.</summary>
-    public List<UpdateEntry> OnUpdate { get; set; } = [];
+    public WatchHooks() : this([], []) { }
+    public List<StartupEntry> OnStartup { get; init; } = OnStartup ?? [];
+    public List<UpdateEntry> OnUpdate { get; init; } = OnUpdate ?? [];
 }

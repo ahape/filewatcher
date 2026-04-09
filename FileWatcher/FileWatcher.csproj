@@ -7,10 +7,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <EmbeddedResource Include="wwwroot\index.html" LogicalName="FileWatcher.wwwroot.index.html" />
+    <EmbeddedResource Include="wwwroot\styles.css" LogicalName="FileWatcher.wwwroot.styles.css" />
+    <EmbeddedResource Include="wwwroot\dashboard.js" LogicalName="FileWatcher.wwwroot.dashboard.js" />
   </ItemGroup>
-
-  <Target Name="BuildWebPlugin" AfterTargets="Build">
-    <MSBuild Projects="..\FileWatcher.Web\FileWatcher.Web.csproj" Targets="Build" Properties="Configuration=$(Configuration);BuildProjectReferences=false" />
-    <Copy SourceFiles="..\FileWatcher.Web\bin\$(Configuration)\$(TargetFramework)\FileWatcher.Web.dll" DestinationFolder="$(OutputPath)" />
-  </Target>
 </Project>
