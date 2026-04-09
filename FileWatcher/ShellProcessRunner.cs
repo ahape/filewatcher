@@ -23,8 +23,26 @@ internal sealed class ShellProcessRunner : IProcessRunner
     {
         using var p = new Process { StartInfo = CreateStartInfo(cmd, dir) };
         AttachHandlers(p, onOut, onErr);
+
+        using var job = OperatingSystem.IsWindows() ? CreateJob() : null;
+
         StartProcess(p, onStarted);
+
+        if (OperatingSystem.IsWindows() && job != null)
+        {
+            AddProcessToJob(job, p.Id);
+        }
+
         return await WaitForExitAsync(p, token);
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static WindowsJobObject CreateJob() => new($"FileWatcher_{Guid.NewGuid()}");
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void AddProcessToJob(WindowsJobObject job, int pid)
+    {
+        try { job.AddProcess(pid); } catch { /* Ignore */ }
     }
 
     private static ProcessStartInfo CreateStartInfo(string cmd, string dir)
@@ -61,7 +79,30 @@ internal sealed class ShellProcessRunner : IProcessRunner
     private static void StartProcess(Process process, Action<int>? onStarted)
     {
         process.Start();
+
+        // Report PID immediately
         onStarted?.Invoke(process.Id);
+
+        if (OperatingSystem.IsWindows() && onStarted != null)
+        {
+            // Try to find the actual workload PID after a short delay
+            int rootPid = process.Id;
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(500); // Wait for shell/script to spawn workload
+                try
+                {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        int? workloadId = ProcessTreeDiscovery.FindWorkloadChild(rootPid);
+                        if (workloadId.HasValue)
+                            onStarted(workloadId.Value);
+                    }
+                }
+                catch { /* Ignore discovery errors */ }
+            });
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
     }
@@ -87,6 +128,8 @@ internal sealed class ShellProcessRunner : IProcessRunner
 
         try
         {
+            // entireProcessTree: true is usually enough, but combined with 
+            // the Job Object (via using declaration in RunAsync), it's bulletproof.
             process.Kill(entireProcessTree: true);
         }
         catch
