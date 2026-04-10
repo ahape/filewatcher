@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FileWatcher watchconfig.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "settings": {
+      "$ref": "#/definitions/settings"
+    },
+    "hooks": {
+      "$ref": "#/definitions/hooks"
+    }
+  },
+  "definitions": {
+    "nonWhitespaceString": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "debounceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1000
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onStartup": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/startupHook"
+          },
+          "default": []
+        },
+        "onUpdate": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/updateHook"
+          },
+          "default": []
+        }
+      }
+    },
+    "startupHook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "$ref": "#/definitions/nonWhitespaceString"
+        },
+        "location": {
+          "type": "string"
+        },
+        "logLevel": {
+          "type": "string",
+          "default": "Info"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "updateHook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "command"
+          ]
+        },
+        {
+          "required": [
+            "copyTo"
+          ]
+        }
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/nonWhitespaceString"
+        },
+        "copyTo": {
+          "$ref": "#/definitions/nonWhitespaceString"
+        },
+        "command": {
+          "$ref": "#/definitions/nonWhitespaceString"
+        },
+        "location": {
+          "type": "string"
+        },
+        "logLevel": {
+          "type": "string",
+          "default": "Info"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

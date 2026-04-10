@@ -1,6 +1,5 @@
 obj/
 bin/
-watchconfig.json
 node_modules/
 coverage/
 TestResults/
