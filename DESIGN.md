@@ -15,6 +15,7 @@ The system treats your development environment as a state machine:
 - **Update Hooks:** Declare the reactive pipeline (Source → Copy → Command).
 
 By consolidating these into a single unified `Hook` model, we ensure a consistent interface for every action the tool performs.
+The loader also normalizes `source`, `copyTo`, and `location` relative to the config file so orchestration is stable regardless of the shell's current directory.
 
 ### 3. SRP at Scale
 While we've moved away from class-level SRP (Single Responsibility Principle), we apply it at the **Process Level**. This tool does not try to be a compiler, a linter, or a deployment script. It is strictly the *orchestrator* that knows when and how to trigger those specialized tools.
@@ -30,6 +31,8 @@ OS-level file events are notoriously noisy and platform-dependent. FileWatcher a
 - **State Validation:** Comparing file size and `LastWriteTime` to filter spurious events.
 - **Atomic Save Detection:** Monitoring `Renamed` events to support modern IDEs that use temporary swap files.
 - **Async Debouncing:** Using `CancellationTokenSource` and `ConcurrentDictionary` to collapse rapid-fire events into a single execution.
+
+Configuration loading is equally defensive: if `settings` or `hooks` are omitted, the runtime falls back to defaults instead of requiring boilerplate.
 
 ## Future-Proofing
 By relying solely on the .NET 10 Base Class Library (BCL), FileWatcher avoids the "dependency rot" that plagues many developer tools. As long as the .NET runtime exists, this orchestrator will continue to function without requiring package updates or security patches for third-party libraries.

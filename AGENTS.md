@@ -26,18 +26,18 @@ To prevent rapid-fire triggers (e.g., during a batch file copy), the system uses
 - If no further events occur within the window, the command is executed.
 
 ### 3. Unified Hook Pipeline
-The system uses a single `Hook` model for both `onStartup` and `onUpdate`. Every hook follows a consistent execution pipeline:
-1. **Source Check:** If a `Source` is provided (Update Hook), it ensures the file exists.
-2. **Copy Phase:** If `CopyTo` is defined, the file is copied to the destination, creating directories if needed.
-3. **Execution Phase:** If `Command` is defined, it spawns a subprocess and pipes `stdout`/`stderr` to the console with color-coded prefixes.
+The system uses a single `Hook` model for both `onStartup` and `onUpdate`.
+- **Startup Hooks:** Start immediately on launch and continue running until the process is cancelled. With `--exit-after-startup`, FileWatcher waits for them to finish and then exits.
+- **Update Hooks:** Trigger only after a real file event survives state validation and debounce.
+- **Execution Pipeline:** If `CopyTo` is defined, the file is copied first. If `Command` is defined, FileWatcher spawns a subprocess and pipes `stdout`/`stderr` to the console with stream-colored prefixes.
 
 ## Modern C# Usage
 - **Primary Constructors:** Used in `Models.cs` for extreme brevity.
 - **Collection Expressions (`[]`):** Preferred for all array/list initializations.
 - **Local Functions:** Used in `Program.cs` for logic encapsulation without the overhead of private methods.
-- **Raw String Literals:** Used for multi-line strings and JSON samples.
+- **Positional Records with Defaults:** Used to keep config models concise while still allowing missing `settings` and `hooks` sections.
 
 ## Validation & Testing
 - To run the full system verification: `dotnet test`.
 - To test the app manually: `dotnet run --project FileWatcher/FileWatcher.csproj -- [config.json] [--exit-after-startup]`.
-- Always normalize paths to absolute versions during config loading to ensure reliable matching across different working directories.
+- Always normalize `source`, `copyTo`, and `location` against the config file directory during config loading to ensure reliable matching across different working directories.

@@ -6,6 +6,8 @@ A minimalist, "one-stop-shop" developer orchestrator. It spins up your backgroun
 - **Parallel Startup:** Runs all your required background processes simultaneously on launch.
 - **Robust File Watching:** Handles "atomic saves" from modern IDEs (VS Code, JetBrains, etc.) and avoids redundant triggers.
 - **Unified Hook System:** A simple "Source -> Copy -> Command" pipeline.
+- **Config-Relative Paths:** `source`, `copyTo`, and `location` resolve from the config file directory, not the shell's current directory.
+- **Forgiving Config Loading:** Missing `settings` or `hooks` sections fall back to sensible defaults.
 - **Zero Dependencies:** Built entirely on the modern .NET 10 Base Class Library.
 
 ## Getting Started
@@ -69,13 +71,19 @@ dotnet run --project FileWatcher/FileWatcher.csproj -- --exit-after-startup
 ### `settings`
 - `debounceMs`: Milliseconds to wait after a file change before triggering the action.
 
+If `settings` is omitted, FileWatcher uses the default debounce window of `1000` ms.
+
 ### `hooks` (Startup & Update)
 - `name`: Label shown in log prefixes.
 - `command`: Shell command to execute.
 - `source`: (Update only) Path to the file to watch.
 - `copyTo`: (Update only) Destination to copy the source file to on change.
 - `location`: Working directory for the command.
+- `logLevel`: Reserved compatibility field on the unified `Hook` model. Current console coloring is based on stdout/stderr stream type, not this value.
 - `enabled`: Set to `false` to skip the hook without removing it.
+
+Relative paths are resolved against the directory containing the config file.
+If `hooks` is omitted, FileWatcher starts with no startup hooks and no update hooks.
 
 ## Architecture
 This tool is designed for extreme maintainability. The entire orchestration logic resides in just two files:
