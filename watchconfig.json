@@ -12,7 +12,7 @@
       {
         "name": "IIS Express",
         "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1",
-        "enabled": false
+        "enabled": true
       },
       {
         "name": "TypeScript Watcher",
@@ -20,7 +20,7 @@
       },
       {
         "name": "Web Logs",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -Command 'Write-Output $null > $env:TMP/bmweblog2.txt && Get-Content $env:TMP/bmweblog2.txt -Wait'"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Watch-WebLogs.ps1"
       }
     ],
     "onUpdate": [
