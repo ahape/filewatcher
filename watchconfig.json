@@ -21,6 +21,11 @@
       {
         "name": "Web Logs",
         "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Watch-WebLogs.ps1"
+      },
+      {
+        "name": "CAWJ",
+        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj",
+        "enabled": true
       }
     ],
     "onUpdate": [
