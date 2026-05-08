@@ -24,8 +24,12 @@
       },
       {
         "name": "CAWJ",
-        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj",
+        "command": "dotnet run --project 'C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj'",
         "enabled": true
+      },
+      {
+        "name": "Trigger Login",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File 'C:/Users/AlanHape/source/repos/filewatcher-scripts/Start-SamlLogin.ps1'"
       }
     ],
     "onUpdate": [
