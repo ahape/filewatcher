@@ -29,7 +29,7 @@
       },
       {
         "name": "Trigger Login",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File C:/Users/AlanHape/source/repos/filewatcher-scripts/Start-SamlLogin.ps1"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-SamlLogin.ps1"
       }
     ],
     "onUpdate": [
