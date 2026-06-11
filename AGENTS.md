@@ -29,6 +29,7 @@ To prevent rapid-fire triggers (e.g., during a batch file copy), the system uses
 The top-level `env` map makes machine-specific paths portable. Each `{{key}}` in a hook's `command`, `source`, `copyTo`, or `location` is replaced with its mapped value at config load time, before path normalization.
 - Keys prefixed with `path:` are **smart-joined**: a trailing separator on the value is dropped when the template is immediately followed by `/` or `\`, so the two never collide (`/src/` + `/foo` → `/src/foo`).
 - Values are unix-style (e.g. `/src/projects`); on Windows a leading `/` is drive-relative, and `Path.GetFullPath` resolves it against the config's drive, so `copyTo`/`File.Copy` work unchanged.
+- An optional `|modifier` transforms the resolved value. `winstyle` (`{{path:azure|winstyle}}/Web`) folds in the path segment written right after the token and resolves the whole thing to a Windows-style absolute path with consistent separators (`C:\src\azure\Web`) via `Path.GetFullPath` against the config directory — so it never produces mixed paths like `C:\src\azure/Web`. Useful for tools that don't accept drive-relative `/src/...` arguments. Unknown keys are left untouched.
 
 ### 4. Unified Hook Pipeline
 The system uses a single `Hook` model for both `onStartup` and `onUpdate`.

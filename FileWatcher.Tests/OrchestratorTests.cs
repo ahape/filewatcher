@@ -128,6 +128,35 @@ public sealed class OrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task EnvTemplate_WinstyleModifier_ResolvesToWindowsAbsolutePath()
+    {
+        var marker = Path.Combine(_testDir, "winstyle.txt");
+        var config = new
+        {
+            Settings = new { DebounceMs = 100 },
+            Env = new Dictionary<string, string> { ["path:demo"] = "/demo/path" },
+            Hooks = new
+            {
+                // Echo the expanded value (with a forward-slash trailing segment) so we can inspect
+                // how "winstyle" rendered the joined path.
+                OnStartup = new[] {
+                    new { Name = "echo", Command = "echo {{path:demo|winstyle}}/sub/leaf> \"" + marker + "\"", Enabled = true }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        await Program.Main([_configPath, "--exit-after-startup"]);
+
+        Assert.True(File.Exists(marker), "Startup echo hook should have run.");
+        var resolved = File.ReadAllText(marker).Trim();
+        Assert.Matches(@"^[A-Za-z]:\\", resolved);          // drive-letter rooted
+        Assert.EndsWith(@"\demo\path\sub\leaf", resolved);   // trailing segment joined with backslashes
+        Assert.DoesNotContain('/', resolved);                // no mixed separators
+    }
+
+    [Fact]
     public async Task ExitAfterStartup_RunsStartupHooks_WithoutEnteringWatchLoop()
     {
         var srcDir = Path.Combine(_testDir, "src");

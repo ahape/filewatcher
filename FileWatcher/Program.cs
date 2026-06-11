@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,6 +13,10 @@ namespace FileWatcher;
 public static class Program
 {
     private static readonly JsonSerializerOptions s_json = new() { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
+    // Matches a "{{key}}" token plus any path segment written immediately after it (e.g.
+    // "{{path:azure}}/BrightMetricsWeb"). Capturing the trailing segment lets path modifiers
+    // normalize the whole joined path to one correct separator instead of leaving "C:\a/b".
+    private static readonly Regex s_token = new(@"\{\{([^{}]+)\}\}((?:[/\\][^\s""'{}<>|]*)?)", RegexOptions.Compiled);
 
     public static async Task Main(string[] args)
     {
@@ -25,28 +30,36 @@ public static class Program
         var baseDir = Path.GetDirectoryName(configPath)!;
         var config = JsonSerializer.Deserialize<WatchConfig>(File.ReadAllText(configPath), s_json) ?? new();
 
-        // Expand "{{key}}" template variables from the config's env map. Keys prefixed with
-        // "path:" get smart-joined so a trailing separator on the value can't collide with a
-        // leading separator in the template (e.g. "/src/" + "/foo" -> "/src/foo", not "/src//foo").
+        // Expand "{{key}}" template variables (and any path segment written right after them) from
+        // the config's env map. An optional "|modifier" transforms the resolved value:
+        //   winstyle -> a Windows-style absolute path with consistent separators, joining the
+        //               trailing segment too (e.g. "{{path:azure|winstyle}}/Web" -> "C:\src\azure\Web").
+        // Keys prefixed with "path:" are smart-joined so a trailing separator on the value can't
+        // collide with a leading separator in the segment ("/src/" + "/foo" -> "/src/foo"). Unknown
+        // keys are left untouched.
         string Expand(string input)
         {
             if (string.IsNullOrEmpty(input)) return input;
-            foreach (var (key, value) in config.Env)
+            return s_token.Replace(input, match =>
             {
-                var token = $"{{{{{key}}}}}";
-                var isPath = key.StartsWith("path:", StringComparison.Ordinal);
-                int idx;
-                while ((idx = input.IndexOf(token, StringComparison.Ordinal)) >= 0)
-                {
-                    var after = idx + token.Length;
-                    var replacement = value;
-                    if (isPath && replacement.Length > 0 && (replacement[^1] == '/' || replacement[^1] == '\\')
-                        && after < input.Length && (input[after] == '/' || input[after] == '\\'))
-                        replacement = replacement[..^1];
-                    input = string.Concat(input.AsSpan(0, idx), replacement, input.AsSpan(after));
-                }
-            }
-            return input;
+                var inner = match.Groups[1].Value;
+                var trailing = match.Groups[2].Value;
+                var pipe = inner.IndexOf('|');
+                var key = (pipe < 0 ? inner : inner[..pipe]).Trim();
+                var modifier = pipe < 0 ? null : inner[(pipe + 1)..].Trim();
+                if (!config.Env.TryGetValue(key, out var value)) return match.Value;
+
+                // Fold the trailing segment in and let GetFullPath produce one correctly-separated path.
+                if (string.Equals(modifier, "winstyle", StringComparison.OrdinalIgnoreCase))
+                    return Path.GetFullPath(value + trailing, baseDir);
+
+                // Keep the value's native (unix) style, dropping a duplicate join separator if present.
+                if (key.StartsWith("path:", StringComparison.Ordinal) && value.Length > 0
+                    && (value[^1] == '/' || value[^1] == '\\')
+                    && trailing.Length > 0 && (trailing[0] == '/' || trailing[0] == '\\'))
+                    value = value[..^1];
+                return value + trailing;
+            });
         }
 
         foreach (var hook in config.Hooks.OnStartup.Concat(config.Hooks.OnUpdate))

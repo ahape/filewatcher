@@ -1,9 +1,7 @@
 [CmdletBinding()]
 param (
-    [int]$Port = 8081,
-    # Supplied by FileWatcher via the hook command, e.g. "-ServerDirectory {{path:azure}}/BrightMetricsWeb",
-    # so the path stays portable instead of being hardcoded here.
-    [string]$ServerDirectory
+    [string]$ServerDirectory,
+    [int]$Port = 8081
 )
 
 if ([string]::IsNullOrWhiteSpace($ServerDirectory)) {

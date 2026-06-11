@@ -16,7 +16,7 @@
       },
       {
         "name": "IIS Express",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure}}/BrightMetricsWeb"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure|winstyle}}/BrightMetricsWeb"
       },
       {
         "name": "TypeScript Watcher",
@@ -28,7 +28,7 @@
       },
       {
         "name": "CAWJ",
-        "command": "dotnet run --project {{path:projects}}/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
+        "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
       },
       {
         "name": "Trigger Login (deprecated)",
@@ -41,7 +41,7 @@
       },
       {
         "name": "PC RT",
-        "command": "dotnet run --project {{path:projects}}/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
+        "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
         "enabled": false
       }
     ],
