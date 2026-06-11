@@ -27,7 +27,7 @@ function Start-WebAppInBrowser {
 # So that '. ./Start-WebApp.ps1' can simply load the functions rather than launching everything.
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $Browser) {
-        #$Browser = 'C:\Program Files\Google\Chrome Dev\Application\chrome.exe'
+        $Browser = 'C:\Program Files\Google\Chrome Dev\Application\chrome.exe'
         #$Browser = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
     }
 
