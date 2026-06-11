@@ -3,6 +3,11 @@
   "settings": {
     "debounceMs": 1000
   },
+  "env": {
+    "path:projects": "/src/projects",
+    "path:azure": "/src/azure",
+    "path:webui2": "/src/projects/BrightMetricsWeb/BrightMetricsWeb.BrightMetricsWebUI/UI-2"
+  },
   "hooks": {
     "onStartup": [
       {
@@ -11,11 +16,11 @@
       },
       {
         "name": "IIS Express",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure}}/BrightMetricsWeb"
       },
       {
         "name": "TypeScript Watcher",
-        "command": "npx --prefix /src/projects/BrightMetricsWeb/BrightMetricsWeb.BrightMetricsWebUI/UI-2/ -- tsc -w -p /src/projects/BrightMetricsWeb/BrightMetricsWeb.BrightMetricsWebUI/UI-2/tsconfig.development.json --pretty false --preserveWatchOutput"
+        "command": "npx --prefix {{path:webui2}}/ -- tsc -w -p {{path:webui2}}/tsconfig.development.json --pretty false --preserveWatchOutput"
       },
       {
         "name": "Web Logs",
@@ -23,7 +28,7 @@
       },
       {
         "name": "CAWJ",
-        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
+        "command": "dotnet run --project {{path:projects}}/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
       },
       {
         "name": "Trigger Login (deprecated)",
@@ -36,22 +41,22 @@
       },
       {
         "name": "PC RT",
-        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
+        "command": "dotnet run --project {{path:projects}}/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
         "enabled": false
       }
     ],
     "onUpdate": [
       {
         "name": "Lint Typescript",
-        "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
-        "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
+        "source": "{{path:webui2}}/scripts/build/brightmetrics.js",
+        "location": "{{path:webui2}}/",
         "command": "npm run lint --silent && echo OK",
         "enabled": false
       },
       {
         "name": "Copy JS to Server",
-        "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
-        "copyTo": "c:\\src\\azure\\BrightmetricsWeb\\UI-2\\scripts\\build\\brightmetrics.js"
+        "source": "{{path:webui2}}/scripts/build/brightmetrics.js",
+        "copyTo": "{{path:azure}}/BrightmetricsWeb/UI-2/scripts/build/brightmetrics.js"
       }
     ]
   }

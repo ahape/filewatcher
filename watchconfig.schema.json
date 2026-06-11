@@ -10,11 +10,21 @@
     "settings": {
       "$ref": "#/definitions/settings"
     },
+    "env": {
+      "$ref": "#/definitions/env"
+    },
     "hooks": {
       "$ref": "#/definitions/hooks"
     }
   },
   "definitions": {
+    "env": {
+      "type": "object",
+      "description": "Template variables. Each \"{{key}}\" in a hook's command, source, copyTo, or location is replaced with its mapped value. Keys prefixed with \"path:\" are smart-joined so separators never collide.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "nonWhitespaceString": {
       "type": "string",
       "pattern": "\\S"

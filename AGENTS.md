@@ -25,7 +25,12 @@ To prevent rapid-fire triggers (e.g., during a batch file copy), the system uses
 - A new task is spawned with a `Task.Delay(DebounceMs)`.
 - If no further events occur within the window, the command is executed.
 
-### 3. Unified Hook Pipeline
+### 3. Env Template Variables
+The top-level `env` map makes machine-specific paths portable. Each `{{key}}` in a hook's `command`, `source`, `copyTo`, or `location` is replaced with its mapped value at config load time, before path normalization.
+- Keys prefixed with `path:` are **smart-joined**: a trailing separator on the value is dropped when the template is immediately followed by `/` or `\`, so the two never collide (`/src/` + `/foo` → `/src/foo`).
+- Values are unix-style (e.g. `/src/projects`); on Windows a leading `/` is drive-relative, and `Path.GetFullPath` resolves it against the config's drive, so `copyTo`/`File.Copy` work unchanged.
+
+### 4. Unified Hook Pipeline
 The system uses a single `Hook` model for both `onStartup` and `onUpdate`.
 - **Startup Hooks:** Start immediately on launch and continue running until the process is cancelled. With `--exit-after-startup`, FileWatcher waits for them to finish and then exits.
 - **Update Hooks:** Trigger only after a real file event survives state validation and debounce.

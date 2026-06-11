@@ -1,8 +1,15 @@
 [CmdletBinding()]
 param (
     [int]$Port = 8081,
-    [string]$ServerDirectory = "C:\src\azure\BrightMetricsWeb"
+    # Supplied by FileWatcher via the hook command, e.g. "-ServerDirectory {{path:azure}}/BrightMetricsWeb",
+    # so the path stays portable instead of being hardcoded here.
+    [string]$ServerDirectory
 )
+
+if ([string]::IsNullOrWhiteSpace($ServerDirectory)) {
+    Write-Error "ServerDirectory is required. Pass it via -ServerDirectory <path>."
+    return
+}
 
 # 1. Validate Port (Must be > 1024 to run without Admin rights)
 if ($Port -le 1024 -or $Port -gt 65535) {

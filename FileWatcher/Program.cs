@@ -24,6 +24,39 @@ public static class Program
 
         var baseDir = Path.GetDirectoryName(configPath)!;
         var config = JsonSerializer.Deserialize<WatchConfig>(File.ReadAllText(configPath), s_json) ?? new();
+
+        // Expand "{{key}}" template variables from the config's env map. Keys prefixed with
+        // "path:" get smart-joined so a trailing separator on the value can't collide with a
+        // leading separator in the template (e.g. "/src/" + "/foo" -> "/src/foo", not "/src//foo").
+        string Expand(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return input;
+            foreach (var (key, value) in config.Env)
+            {
+                var token = $"{{{{{key}}}}}";
+                var isPath = key.StartsWith("path:", StringComparison.Ordinal);
+                int idx;
+                while ((idx = input.IndexOf(token, StringComparison.Ordinal)) >= 0)
+                {
+                    var after = idx + token.Length;
+                    var replacement = value;
+                    if (isPath && replacement.Length > 0 && (replacement[^1] == '/' || replacement[^1] == '\\')
+                        && after < input.Length && (input[after] == '/' || input[after] == '\\'))
+                        replacement = replacement[..^1];
+                    input = string.Concat(input.AsSpan(0, idx), replacement, input.AsSpan(after));
+                }
+            }
+            return input;
+        }
+
+        foreach (var hook in config.Hooks.OnStartup.Concat(config.Hooks.OnUpdate))
+        {
+            hook.Command = Expand(hook.Command);
+            hook.Source = Expand(hook.Source);
+            hook.Location = Expand(hook.Location);
+            if (hook.CopyTo != null) hook.CopyTo = Expand(hook.CopyTo);
+        }
+
         foreach (var hook in config.Hooks.OnStartup.Concat(config.Hooks.OnUpdate))
             hook.Location = string.IsNullOrWhiteSpace(hook.Location) ? baseDir : Path.GetFullPath(hook.Location, baseDir);
         foreach (var hook in config.Hooks.OnUpdate)

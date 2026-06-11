@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -84,6 +85,46 @@ public sealed class OrchestratorTests : IDisposable
 
         Assert.True(File.Exists(Path.Combine(_testDir, "dest", "utils_copied.ts")), "Enabled hook should copy on update.");
         Assert.False(File.Exists(Path.Combine(_testDir, "dest", "disabled.ts")), "Disabled hook should be ignored.");
+    }
+
+    [Fact]
+    public async Task EnvTemplates_ExpandInHookPaths_WithSmartPathJoin()
+    {
+        var srcDir = Path.Combine(_testDir, "src");
+        Directory.CreateDirectory(srcDir);
+
+        var sourceFile = Path.Combine(srcDir, "utils.ts");
+        File.WriteAllText(sourceFile, "initial content");
+
+        // Trailing separator on the value exercises the "path:" smart-join: "{{path:root}}/src"
+        // must resolve to "<testDir>/src", not "<testDir>//src".
+        var config = new
+        {
+            Settings = new { DebounceMs = 200 },
+            Env = new Dictionary<string, string> { ["path:root"] = _testDir + Path.DirectorySeparatorChar },
+            Hooks = new
+            {
+                OnUpdate = new[] {
+                    new {
+                        Name = "copy",
+                        Source = "{{path:root}}/src/utils.ts",
+                        CopyTo = "{{path:root}}/dest/utils_copied.ts",
+                        Enabled = true
+                    }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        var runTask = Task.Run(() => Program.Main([_configPath]));
+        await Task.Delay(1000);
+        File.WriteAllText(sourceFile, "updated content");
+        await Task.Delay(1000);
+
+        Assert.False(runTask.IsFaulted);
+        Assert.True(File.Exists(Path.Combine(_testDir, "dest", "utils_copied.ts")),
+            "Templated source/copyTo should expand and copy to the resolved path.");
     }
 
     [Fact]
