@@ -11,8 +11,7 @@
       },
       {
         "name": "IIS Express",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1",
-        "enabled": true
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1"
       },
       {
         "name": "TypeScript Watcher",
@@ -24,12 +23,21 @@
       },
       {
         "name": "CAWJ",
-        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj",
-        "enabled": true
+        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
+      },
+      {
+        "name": "Trigger Login (deprecated)",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-SamlLogin.ps1",
+        "enabled": false
       },
       {
         "name": "Trigger Login",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-SamlLogin.ps1"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-WebApp.ps1"
+      },
+      {
+        "name": "PC RT",
+        "command": "dotnet run --project C:/src/projects/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
+        "enabled": false
       }
     ],
     "onUpdate": [
@@ -37,7 +45,8 @@
         "name": "Lint Typescript",
         "source": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\scripts\\build\\brightmetrics.js",
         "location": "c:\\src\\projects\\BrightMetricsWeb\\BrightMetricsWeb.BrightMetricsWebUI\\UI-2\\",
-        "command": "npm run lint --silent && echo OK"
+        "command": "npm run lint --silent && echo OK",
+        "enabled": false
       },
       {
         "name": "Copy JS to Server",
