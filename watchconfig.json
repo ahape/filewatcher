@@ -55,11 +55,11 @@
     ],
     "onUpdate": [
       {
-        "name": "Lint Typescript",
+        "name": "Lint TS/JS",
         "source": "{{path:webui2}}/scripts/build/brightmetrics.js",
         "location": "{{path:webui2}}/",
         "command": "npm run lint --silent && echo OK",
-        "enabled": false
+        "enabled": true
       },
       {
         "name": "Copy JS to Server",
