@@ -6,6 +6,7 @@
   "env": {
     "path:projects": "/src/projects",
     "path:azure": "/src/azure",
+    "path:webui": "/src/projects/BrightMetricsWeb/BrightMetricsWeb.BrightMetricsWebUI",
     "path:webui2": "/src/projects/BrightMetricsWeb/BrightMetricsWeb.BrightMetricsWebUI/UI-2"
   },
   "hooks": {
@@ -15,8 +16,14 @@
         "command": "azurite --silent --location ./.startup-content/azurite/workspace"
       },
       {
+        "name": "Build WebUI",
+        "command": "msbuild /p:INVOKE_BUILD_VERBOSITY=0 {{path:webui|winstyle}}/BrightMetricsWeb.BrightMetricsWebUI.csproj",
+        "enabled": false
+      },
+      {
         "name": "IIS Express",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure|winstyle}}/BrightMetricsWeb"
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure|winstyle}}/BrightMetricsWeb",
+        "logLevel": "Silent"
       },
       {
         "name": "TypeScript Watcher",
@@ -42,6 +49,7 @@
       {
         "name": "PC RT",
         "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
+        "logLevel": "Silent",
         "enabled": false
       }
     ],

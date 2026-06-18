@@ -186,4 +186,45 @@ public sealed class OrchestratorTests : IDisposable
         Assert.True(File.Exists(startupMarker), "Startup hooks should run before exiting.");
         Assert.False(File.Exists(copiedFile), "Exit-after-startup should skip the watch loop.");
     }
+
+    [Fact]
+    public async Task LogLevel_Silent_SuppressesProcessOutput()
+    {
+        var srcDir = Path.Combine(_testDir, "src");
+        Directory.CreateDirectory(srcDir);
+
+        var sourceFile = Path.Combine(srcDir, "utils.ts");
+        File.WriteAllText(sourceFile, "initial content");
+
+        var config = new
+        {
+            Settings = new { DebounceMs = 100 },
+            Hooks = new
+            {
+                OnStartup = new[] {
+                    new { Name = "silent_startup", Command = "echo running startup", LogLevel = "Silent", Enabled = true }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        var originalOut = Console.Out;
+        using var sw = new StringWriter();
+        Console.SetOut(sw);
+
+        try
+        {
+            await Program.Main([_configPath, "--exit-after-startup"]);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        var output = sw.ToString();
+        Assert.Contains("Running silently...", output);
+        Assert.DoesNotContain("running startup", output);
+    }
 }
+

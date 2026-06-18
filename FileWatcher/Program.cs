@@ -121,8 +121,23 @@ public static class Program
                     UseShellExecute = false,
                     CreateNoWindow = true
                 }) ?? throw new InvalidOperationException("Failed to start process.");
-                process.OutputDataReceived += (_, e) => { if (e.Data != null) Log(name, e.Data, ConsoleColor.Cyan); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) Log(name, e.Data, ConsoleColor.Red); };
+                var isSilent = string.Equals(hook.LogLevel, "Silent", StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(hook.LogLevel, "None", StringComparison.OrdinalIgnoreCase);
+                var isErrorOnly = string.Equals(hook.LogLevel, "Error", StringComparison.OrdinalIgnoreCase);
+
+                if (isSilent)
+                {
+                    Log(name, "Running silently...", ConsoleColor.DarkGray);
+                }
+
+                if (!isSilent && !isErrorOnly)
+                {
+                    process.OutputDataReceived += (_, e) => { if (e.Data != null) Log(name, e.Data, ConsoleColor.Cyan); };
+                }
+                if (!isSilent)
+                {
+                    process.ErrorDataReceived += (_, e) => { if (e.Data != null) Log(name, e.Data, ConsoleColor.Red); };
+                }
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
                 try { await process.WaitForExitAsync(token); }
