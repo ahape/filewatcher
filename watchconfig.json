@@ -65,6 +65,11 @@
         "name": "Copy JS to Server",
         "source": "{{path:webui2}}/scripts/build/brightmetrics.js",
         "copyTo": "{{path:azure}}/BrightmetricsWeb/UI-2/scripts/build/brightmetrics.js"
+      },
+      {
+        "name": "Copy CSS to Server",
+        "source": "{{path:webui2}}/styles/build/brightmetrics.css",
+        "copyTo": "{{path:azure}}/BrightmetricsWeb/UI-2/styles/build/brightmetrics.css"
       }
     ]
   }
