@@ -81,6 +81,9 @@ If `settings` is omitted, FileWatcher uses the default debounce window of `1000`
 - `location`: Working directory for the command.
 - `logLevel`: Reserved compatibility field on the unified `Hook` model. Current console coloring is based on stdout/stderr stream type, not this value.
 - `enabled`: Set to `false` to skip the hook without removing it.
+- `job`: (Startup only) Unique id marking a hook that exits. Jobs run one at a time in array order. If a job exits non-zero, FileWatcher stops everything and exits with code 1.
+- `await`: (Startup only) Id of a job declared above this hook; the hook starts once that job succeeds. Awaiting a disabled job waits on the jobs above it.
+- `notes`: Free-form remarks for developers; ignored at runtime.
 
 Relative paths are resolved against the directory containing the config file.
 If `hooks` is omitted, FileWatcher starts with no startup hooks and no update hooks.

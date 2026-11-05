@@ -80,6 +80,18 @@
           "type": "string",
           "default": "Info"
         },
+        "job": {
+          "$ref": "#/definitions/nonWhitespaceString",
+          "description": "Marks a hook that exits. Jobs run one at a time in array order; a failing job stops FileWatcher."
+        },
+        "await": {
+          "$ref": "#/definitions/nonWhitespaceString",
+          "description": "Job id declared above this hook. The hook starts after that job succeeds."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form remarks for developers; ignored at runtime."
+        },
         "enabled": {
           "type": "boolean",
           "default": true
@@ -123,6 +135,10 @@
         "logLevel": {
           "type": "string",
           "default": "Info"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form remarks for developers; ignored at runtime."
         },
         "enabled": {
           "type": "boolean",

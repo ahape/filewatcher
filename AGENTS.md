@@ -34,6 +34,7 @@ The top-level `env` map makes machine-specific paths portable. Each `{{key}}` in
 ### 4. Unified Hook Pipeline
 The system uses a single `Hook` model for both `onStartup` and `onUpdate`.
 - **Startup Hooks:** Start immediately on launch and continue running until the process is cancelled. With `--exit-after-startup`, FileWatcher waits for them to finish and then exits.
+- **Jobs:** A startup hook with `job` is expected to exit. Jobs run one at a time in array order, and a hook with `await` starts only after the named job (declared above it) succeeds. A job that exits non-zero cancels everything and sets exit code 1.
 - **Update Hooks:** Trigger only after a real file event survives state validation and debounce.
 - **Execution Pipeline:** If `CopyTo` is defined, the file is copied first. If `Command` is defined, FileWatcher spawns a subprocess and pipes `stdout`/`stderr` to the console with stream-colored prefixes.
 

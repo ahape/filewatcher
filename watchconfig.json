@@ -16,41 +16,55 @@
         "command": "azurite --silent --location ./.startup-content/azurite/workspace"
       },
       {
-        "name": "Build WebUI",
-        "command": "msbuild /p:INVOKE_BUILD_VERBOSITY=0 {{path:webui|winstyle}}/BrightMetricsWeb.BrightMetricsWebUI.csproj",
-        "enabled": false
-      },
-      {
-        "name": "IIS Express",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure|winstyle}}/BrightMetricsWeb",
-        "logLevel": "Silent"
-      },
-      {
-        "name": "TypeScript Watcher",
-        "command": "npx --prefix {{path:webui2}}/ -- tsc -w -p {{path:webui2}}/tsconfig.development.json --pretty false --preserveWatchOutput"
-      },
-      {
-        "name": "Web Logs",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Watch-WebLogs.ps1"
+        "name": "Restore NuGet Packages",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File {{path:projects}}/Invoke-Build.ps1 -Restore",
+        "job": "restore_nuget_packages"
       },
       {
         "name": "CAWJ",
-        "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj"
-      },
-      {
-        "name": "Trigger Login (deprecated)",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-SamlLogin.ps1",
-        "enabled": false
-      },
-      {
-        "name": "Trigger Login",
-        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-WebApp.ps1"
+        "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/CloudAgentWebJob/CloudAgentWebJob.csproj",
+        "await": "restore_nuget_packages"
       },
       {
         "name": "PC RT",
         "command": "dotnet run --project {{path:projects|winstyle}}/BrightMetricsWeb/PureCloudRealtime/PureCloudRealtime.csproj",
+        "await": "restore_nuget_packages",
         "logLevel": "Silent",
         "enabled": false
+      },
+      {
+        "name": "Build WebUI",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Invoke-MSBuild.ps1 -Project {{path:webui|winstyle}}/BrightMetricsWeb.BrightMetricsWebUI.csproj /p:INVOKE_BUILD_VERBOSITY=0",
+        "notes": "This runs MSBuild tasks that copy all web files over to the directory served by IIS",
+        "job": "build_webui"
+      },
+      {
+        "name": "TypeScript Watcher",
+        "command": "npx --prefix {{path:webui2}}/ -- tsc -w -p {{path:webui2}}/tsconfig.development.json --pretty false --preserveWatchOutput",
+        "await": "build_webui"
+      },
+      {
+        "name": "IIS Express",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-IIS.ps1 -ServerDirectory {{path:azure|winstyle}}/BrightMetricsWeb",
+        "logLevel": "Silent",
+        "await": "build_webui"
+      },
+      {
+        "name": "Web Logs",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Watch-WebLogs.ps1",
+        "notes": "Pipes ASP.NET logs to stdout",
+        "enabled": false
+      },
+      {
+        "name": "Web Logs Info",
+        "command": "echo WebLogs written to %TMP%\\bmweblog2.txt",
+        "job": "web_logs_2",
+        "enabled": true
+      },
+      {
+        "name": "Trigger Login",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Start-WebApp.ps1",
+        "await": "web_logs_2"
       }
     ],
     "onUpdate": [
@@ -59,7 +73,7 @@
         "source": "{{path:webui2}}/scripts/build/brightmetrics.js",
         "location": "{{path:webui2}}/",
         "command": "npm run lint --silent && echo OK",
-        "enabled": true
+        "enabled": false
       },
       {
         "name": "Copy JS to Server",

@@ -226,5 +226,82 @@ public sealed class OrchestratorTests : IDisposable
         Assert.Contains("Running silently...", output);
         Assert.DoesNotContain("running startup", output);
     }
+
+    [Fact]
+    public async Task Jobs_RunInOrder_AndAwaitWaits()
+    {
+        var log = Path.Combine(_testDir, "order.txt");
+        var config = new
+        {
+            Hooks = new
+            {
+                // Without job ordering, the slow first job would finish last.
+                OnStartup = new object[] {
+                    new { Name = "a", Command = $"ping -n 2 127.0.0.1 >nul && echo a>> \"{log}\"", Job = "a" },
+                    new { Name = "filler", Command = "echo filler" },
+                    new { Name = "b", Command = $"echo b>> \"{log}\"", Job = "b" },
+                    new { Name = "c", Command = $"echo c>> \"{log}\"", Await = "b" }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        await Program.Main([_configPath, "--exit-after-startup"]);
+
+        Assert.Equal(new[] { "a", "b", "c" }, File.ReadAllLines(log));
+    }
+
+    [Fact]
+    public async Task FailedJob_StopsDependents()
+    {
+        var marker = Path.Combine(_testDir, "dependent.txt");
+        var config = new
+        {
+            Hooks = new
+            {
+                OnStartup = new object[] {
+                    new { Name = "fail", Command = "exit 1", Job = "fail" },
+                    new { Name = "dependent", Command = $"echo ran > \"{marker}\"", Await = "fail" }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        try
+        {
+            await Program.Main([_configPath, "--exit-after-startup"]);
+            Assert.Equal(1, Environment.ExitCode);
+        }
+        finally
+        {
+            Environment.ExitCode = 0;
+        }
+
+        Assert.False(File.Exists(marker), "Hooks awaiting a failed job should not run.");
+    }
+
+    [Fact]
+    public async Task Await_UnknownJob_RunsNothing()
+    {
+        var marker = Path.Combine(_testDir, "startup.txt");
+        var config = new
+        {
+            Hooks = new
+            {
+                OnStartup = new object[] {
+                    new { Name = "independent", Command = $"echo ran > \"{marker}\"" },
+                    new { Name = "orphan", Command = "echo orphan", Await = "missing" }
+                }
+            }
+        };
+
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        await Program.Main([_configPath, "--exit-after-startup"]);
+
+        Assert.False(File.Exists(marker), "An invalid await should stop startup before any hook runs.");
+    }
 }
 

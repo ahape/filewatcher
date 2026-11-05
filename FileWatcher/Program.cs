@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -78,12 +79,27 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(hook.CopyTo)) hook.CopyTo = Path.GetFullPath(hook.CopyTo, baseDir);
         }
 
+        // An awaited job must be declared above the hook awaiting it, which rules out cycles.
+        var declaredJobs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hook in config.Hooks.OnStartup)
+        {
+            if (hook.Await != null && !declaredJobs.Contains(hook.Await))
+            {
+                Console.WriteLine($"Hook '{hook.Name}' awaits job '{hook.Await}', which is not declared above it.");
+                return;
+            }
+            if (hook.Job != null && !declaredJobs.Add(hook.Job))
+            {
+                Console.WriteLine($"Duplicate job id: {hook.Job}");
+                return;
+            }
+        }
+
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
         var exitAfterStartup = args.Any(a => string.Equals(a, "--exit-after-startup", StringComparison.OrdinalIgnoreCase));
         var pending = new ConcurrentDictionary<string, CancellationTokenSource>(StringComparer.OrdinalIgnoreCase);
         var states = new ConcurrentDictionary<string, (DateTime Time, long Size)>(StringComparer.OrdinalIgnoreCase);
-        var startupHooks = config.Hooks.OnStartup.Where(h => h.Enabled).ToArray();
         var updateHooks = config.Hooks.OnUpdate.Where(h => h.Enabled).ToArray();
         var hooksBySource = updateHooks.ToLookup(h => h.Source, StringComparer.OrdinalIgnoreCase);
 
@@ -98,7 +114,8 @@ public static class Program
             }
         }
 
-        async Task Run(Hook hook, CancellationToken token)
+        // Returns false if the command failed to start, exited non-zero, or was cancelled.
+        async Task<bool> Run(Hook hook, CancellationToken token)
         {
             if (!string.IsNullOrWhiteSpace(hook.CopyTo) && File.Exists(hook.Source))
             {
@@ -106,7 +123,7 @@ public static class Program
                 File.Copy(hook.Source, hook.CopyTo, true);
                 Log("COPY", $"Copied {Path.GetFileName(hook.Source)}", ConsoleColor.Green);
             }
-            if (string.IsNullOrWhiteSpace(hook.Command)) return;
+            if (string.IsNullOrWhiteSpace(hook.Command)) return true;
 
             var name = string.IsNullOrWhiteSpace(hook.Name) ? "Hook" : hook.Name;
             try
@@ -141,11 +158,36 @@ public static class Program
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
                 try { await process.WaitForExitAsync(token); }
-                catch (OperationCanceledException) { if (!process.HasExited) process.Kill(true); }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited) process.Kill(true);
+                    return false;
+                }
+                if (process.ExitCode == 0) return true;
+                Log(name, $"Exited with code {process.ExitCode}", ConsoleColor.Red);
+                return false;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Log(name, ex.Message, ConsoleColor.Red);
+                return false;
+            }
+        }
+
+        async Task RunStartup(Hook hook, Task[] prereqs)
+        {
+            var name = string.IsNullOrWhiteSpace(hook.Name) ? "Hook" : hook.Name;
+            if (prereqs.Length > 0)
+            {
+                if (hook.Await != null) Log(name, $"Waiting for {hook.Await}...", ConsoleColor.DarkGray);
+                await Task.WhenAll(prereqs);
+            }
+            if (cts.IsCancellationRequested) return;
+            if (!await Run(hook, cts.Token) && hook.Job != null && !cts.IsCancellationRequested)
+            {
+                Log("SYS", $"Job '{hook.Job}' failed; shutting down.", ConsoleColor.Red);
+                Environment.ExitCode = 1;
+                cts.Cancel();
             }
         }
 
@@ -182,9 +224,23 @@ public static class Program
             }
         }
 
+        // Jobs run one at a time in config order; "await" holds a hook until the named job succeeds.
+        // A failed job shuts everything down.
+        var jobs = new Dictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
+        var previousJob = Task.CompletedTask;
+        var startupTasks = new List<Task>();
+        foreach (var hook in config.Hooks.OnStartup)
+        {
+            Task[] prereqs = [.. hook.Job != null ? [previousJob] : (Task[])[], .. hook.Await != null ? [jobs[hook.Await]] : (Task[])[]];
+            // Disabled jobs pass the chain through, so awaiting one waits on the jobs above it
+            var task = hook.Enabled ? RunStartup(hook, prereqs) : previousJob;
+            if (hook.Job != null) jobs[hook.Job] = previousJob = task;
+            if (hook.Enabled) startupTasks.Add(task);
+        }
+
         if (exitAfterStartup)
         {
-            await Task.WhenAll(startupHooks.Select(h => Run(h, cts.Token)));
+            await Task.WhenAll(startupTasks);
             return;
         }
 
@@ -196,7 +252,6 @@ public static class Program
             watcher.Renamed += (_, e) => HandleChange(e.FullPath);
             return watcher;
         }).ToArray();
-        var startupTasks = startupHooks.Select(h => Run(h, cts.Token)).ToArray();
 
         Log("SYS", "Monitoring started. Press Ctrl+C to quit.", ConsoleColor.Green);
         try { await Task.Delay(Timeout.Infinite, cts.Token); }

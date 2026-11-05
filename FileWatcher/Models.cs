@@ -17,7 +17,7 @@ public record Hooks(Hook[]? OnStartup = null, Hook[]? OnUpdate = null)
     public Hook[] OnUpdate { get; init; } = OnUpdate ?? [];
 }
 
-public record Hook(string Command = "", string Name = "", string Source = "", string? CopyTo = null, string Location = "", string LogLevel = "Info", bool Enabled = true)
+public record Hook(string Command = "", string Name = "", string Source = "", string? CopyTo = null, string Location = "", string LogLevel = "Info", bool Enabled = true, string? Job = null, string? Await = null)
 {
     public string Command { get; set; } = Command;
     public string Source { get; set; } = Source;
