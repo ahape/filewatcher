@@ -303,5 +303,25 @@ public sealed class OrchestratorTests : IDisposable
 
         Assert.False(File.Exists(marker), "An invalid await should stop startup before any hook runs.");
     }
+
+    [Fact]
+    public async Task ConfigFlag_LoadsNamedConfig()
+    {
+        var namedConfig = Path.Combine(_testDir, "watchconfig.xyz.json");
+        var marker = Path.Combine(_testDir, "named.txt");
+        var config = new
+        {
+            Hooks = new
+            {
+                OnStartup = new[] { new { Name = "startup", Command = $"echo named > \"{marker}\"", Enabled = true } }
+            }
+        };
+
+        File.WriteAllText(namedConfig, JsonSerializer.Serialize(config, s_jsonOpts));
+
+        await Program.Main(["--config", namedConfig, "--exit-after-startup"]);
+
+        Assert.True(File.Exists(marker), "The config passed via --config should be loaded.");
+    }
 }
 

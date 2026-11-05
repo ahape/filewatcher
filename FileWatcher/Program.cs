@@ -21,7 +21,16 @@ public static class Program
 
     public static async Task Main(string[] args)
     {
-        var configPath = Path.GetFullPath(args.FirstOrDefault(a => !a.StartsWith('-')) ?? "watchconfig.json");
+        var configFlag = Array.FindIndex(args, a => string.Equals(a, "--config", StringComparison.OrdinalIgnoreCase));
+        if (configFlag == args.Length - 1)
+        {
+            Console.WriteLine("--config requires a path");
+            return;
+        }
+
+        var configPath = Path.GetFullPath(configFlag >= 0
+            ? args[configFlag + 1]
+            : args.FirstOrDefault(a => !a.StartsWith('-')) ?? "watchconfig.json");
         if (!File.Exists(configPath))
         {
             Console.WriteLine($"Config not found: {configPath}");

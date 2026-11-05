@@ -46,5 +46,5 @@ The system uses a single `Hook` model for both `onStartup` and `onUpdate`.
 
 ## Validation & Testing
 - To run the full system verification: `dotnet test`.
-- To test the app manually: `dotnet run --project FileWatcher/FileWatcher.csproj -- [config.json] [--exit-after-startup]`.
+- To test the app manually: `dotnet run --project FileWatcher/FileWatcher.csproj -- [--config config.json | config.json] [--exit-after-startup]`.
 - Always normalize `source`, `copyTo`, and `location` against the config file directory during config loading to ensure reliable matching across different working directories.

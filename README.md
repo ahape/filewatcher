@@ -61,6 +61,11 @@ dotnet run --project FileWatcher/FileWatcher.csproj
 
 # Run with a specific config
 dotnet run --project FileWatcher/FileWatcher.csproj -- my-project.json
+dotnet run --project FileWatcher/FileWatcher.csproj -- --config watchconfig.debug.json
+
+# Launch profiles (FileWatcher/Properties/launchSettings.json)
+dotnet run --project FileWatcher                # default: watchconfig.json
+dotnet run --project FileWatcher -lp custom     # --config watchconfig.debug.json --exit-after-startup
 
 # Run startup hooks and exit immediately (CI/Setup mode)
 dotnet run --project FileWatcher/FileWatcher.csproj -- --exit-after-startup
