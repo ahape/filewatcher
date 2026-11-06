@@ -16,3 +16,4 @@ WebFrontEnd/wwwroot/
 
 # E.g., watchconfig.debug.json, watchconfig.firefox.json
 watchconfig.*.json
+CloudAgentWebJob.log

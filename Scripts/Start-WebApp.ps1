@@ -27,8 +27,10 @@ function Start-WebAppInBrowser {
 # So that '. ./Start-WebApp.ps1' can simply load the functions rather than launching everything.
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $Browser) {
-        $Browser = 'C:\Program Files\Google\Chrome Dev\Application\chrome.exe'
-        #$Browser = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
+        # winget install -e --id Google.Chrome.Dev
+        #$Browser = 'C:\Program Files\Google\Chrome Dev\Application\chrome.exe'
+        # winget install -e --id Mozilla.Firefox.DeveloperEdition
+        $Browser = 'C:\Program Files\Firefox Developer Edition\firefox.exe'
     }
 
     $url = "http://localhost:$Port/Login.aspx?ssoProvider=e9374cae-2860-43df-8141-4e8701973991"
