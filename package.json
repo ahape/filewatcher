@@ -1,9 +1,14 @@
 {
   "scripts": {
+    "azurite": "azurite --silent --location ./.startup-content/azurite/workspace",
+    "azurite:debug": "azurite --location ./.startup-content/azurite/workspace",
     "check": "ajv validate --spec draft7 -s watchconfig.schema.json -d watchconfig.json"
   },
   "devDependencies": {
     "ajv": "^8.18.0",
-    "ajv-cli": "^5.0.0"
+    "ajv-cli": "^0.6.0"
+  },
+  "dependencies": {
+    "azurite": "^3.37.0"
   }
 }

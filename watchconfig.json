@@ -12,8 +12,14 @@
   "hooks": {
     "onStartup": [
       {
+        "name": "Kill Existing Azurite",
+        "command": "pwsh -ExecutionPolicy Bypass -NoProfile -File ./Scripts/Kill-Azurite.ps1",
+        "job": "kill_previous_azurite"
+      },
+      {
         "name": "Azurite",
-        "command": "azurite --silent --location ./.startup-content/azurite/workspace"
+        "command": "bun run azurite",
+        "await": "kill_previous_azurite"
       },
       {
         "name": "Restore NuGet Packages",

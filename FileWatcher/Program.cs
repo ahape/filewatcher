@@ -22,7 +22,7 @@ public static class Program
     public static async Task Main(string[] args)
     {
         var configFlag = Array.FindIndex(args, a => string.Equals(a, "--config", StringComparison.OrdinalIgnoreCase));
-        if (configFlag == args.Length - 1)
+        if (configFlag == Math.Max(args.Length - 1, 0))
         {
             Console.WriteLine("--config requires a path");
             return;
